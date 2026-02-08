@@ -1,0 +1,88 @@
+{
+  "test": "protocol-e2e",
+  "date": "2026-02-07T15:14:27Z",
+  "duration_seconds": 73,
+  "spec": "examples/monolith-split.acp.json",
+  "model": "haiku",
+  "agents": 3,
+  "backend": "memory",
+  "carapace": true,
+
+  "outcome": "PASS",
+
+  "files_produced": {
+    "count": 6,
+    "total_lines": 223,
+    "require_test": "PASS",
+    "exports_count": 21,
+    "files": [
+      { "name": "utils.js", "lines": 42, "deps": [] },
+      { "name": "users.js", "lines": 36, "deps": ["utils.js"] },
+      { "name": "posts.js", "lines": 39, "deps": ["utils.js"] },
+      { "name": "search.js", "lines": 44, "deps": ["utils.js"] },
+      { "name": "cache.js", "lines": 33, "deps": ["utils.js"] },
+      { "name": "monolith.js", "lines": 29, "deps": ["users.js", "posts.js", "search.js", "cache.js", "utils.js"] }
+    ]
+  },
+
+  "coordination": {
+    "getProtocol_calls": 5,
+    "claims_attempted": 23,
+    "claims_approved": 15,
+    "claims_rejected": 8,
+    "claims_released": 15,
+    "discoveries_published": 12,
+    "events_published": 10,
+    "halt_checks": 10
+  },
+
+  "agents": {
+    "agent_00e0c879": {
+      "getProtocol_calls": 2,
+      "claimed": ["file:search.js", "file:utils.js", "file:monolith.js"],
+      "rejected": ["file:users.js", "file:posts.js", "file:cache.js", "file:monolith.js", "file:monolith.js"],
+      "discoveries": 4
+    },
+    "agent_c31a8b6d": {
+      "getProtocol_calls": 2,
+      "claimed": ["file:users.js", "file:posts.js", "file:search.js", "file:cache.js", "file:utils.js", "file:monolith.js"],
+      "rejected": [],
+      "discoveries": 6
+    },
+    "agent_d4c17796": {
+      "getProtocol_calls": 1,
+      "claimed": ["file:posts.js", "file:cache.js", "file:monolith.js", "file:users.js", "file:search.js", "file:utils.js"],
+      "rejected": ["file:users.js", "file:search.js", "file:utils.js", "file:utils.js"],
+      "discoveries": 2
+    }
+  },
+
+  "protocol_adherence": {
+    "all_agents_called_getProtocol_first": true,
+    "halt_check_before_each_iteration": true,
+    "discovery_search_before_claim": true,
+    "claim_reject_skip_pattern": true,
+    "discovery_before_release_order": true,
+    "event_after_completion": true,
+    "resource_naming_convention_followed": true
+  },
+
+  "issues": [
+    {
+      "severity": "low",
+      "issue": "No termination signal without coordinator",
+      "description": "Workers loop through all resources then re-claim completed files. No self-termination from protocol."
+    },
+    {
+      "severity": "low",
+      "issue": "Duplicate work on second pass",
+      "description": "Some agents re-claimed and re-processed already-completed files. Harmless but wasteful."
+    },
+    {
+      "severity": "high",
+      "fixed": true,
+      "issue": "Namespace mismatch",
+      "description": "Protocol loaded to spec.name namespace but agents connect to default. Fixed by loading into both."
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "acp": "1.0",
+  "name": "monolith-split",
+  "title": "Monolith Module Split",
+  "description": "N agents split a monolith into separate modules. Workers claim files for exclusive access, extract modules, publish discoveries about exports, then release. An optional coordinator monitors progress and manages phase transitions.",
+  "tags": ["code-splitting", "refactoring", "parallel"],
+
+  "roles": {
+    "worker": {
+      "description": "Extracts modules from the monolith. Claims files for exclusive access, reads source, extracts the module, writes output, and publishes discoveries about what was exported.",
+      "count": "2+"
+    },
+    "coordinator": {
+      "description": "Monitors progress, manages phase transitions, and can halt work if issues are detected. Optional — workers can self-organize without a coordinator.",
+      "count": "0-1"
+    }
+  },
+
+  "resources": {
+    "claim_patterns": {
+      "file": "file:{filename}"
+    },
+    "discovery_topics": {
+      "module_exports": {
+        "pattern": "module:{filename}",
+        "category": "exports"
+      }
+    },
+    "event_types": {
+      "work_completed": { "type": "work.completed" },
+      "phase_changed": { "type": "phase.changed" }
+    },
+    "state_keys": {
+      "halt": { "key": "halt", "type": "boolean" },
+      "phase": { "key": "phase", "type": "string" }
+    },
+    "instances": [
+      "file:users.js",
+      "file:posts.js",
+      "file:search.js",
+      "file:cache.js",
+      "file:utils.js",
+      "file:monolith.js"
+    ]
+  },
+
+  "phases": {
+    "init": {
+      "description": "Orient and check existing state. Read discoveries and events to understand what work has already been done by other agents."
+    },
+    "work": {
+      "description": "Claim and process resources. Each worker claims a file, extracts its module, publishes a discovery about the exports, then releases the claim and moves to the next file."
+    },
+    "finalize": {
+      "description": "Verify all modules have been extracted and clean up. Check that every resource has a corresponding discovery and no claims remain active."
+    },
+    "done": {
+      "description": "All work is complete. The protocol has finished successfully.",
+      "terminal": true
+    }
+  },
+
+  "rules": {
+    "worker": {
+      "init": {
+        "steps": [
+          {
+            "action": "getProtocol",
+            "description": "Get your coordination instructions"
+          },
+          {
+            "action": "searchDiscoveries",
+            "description": "Check what others have already done"
+          },
+          {
+            "action": "getEvents",
+            "description": "Catch up on events",
+            "params": { "since": 0 }
+          }
+        ]
+      },
+      "work": {
+        "loop": true,
+        "steps": [
+          {
+            "action": "getState",
+            "description": "Check halt flag before each iteration",
+            "params": { "key": "halt" },
+            "on_match": { "value": true, "goto": "done" }
+          },
+          {
+            "action": "searchDiscoveries",
+            "description": "Check for established conventions before starting work"
+          },
+          {
+            "action": "claim",
+            "description": "Claim the next unclaimed resource for exclusive access",
+            "params": { "resource": "$next_unclaimed", "value": "extracting module", "ttlMs": 120000 },
+            "on_rejected": { "skip": true }
+          },
+          {
+            "action": "external",
+            "hint": "Read the source file, extract the module into its own file, update imports/exports. Use require() for cross-module deps."
+          },
+          {
+            "action": "publishDiscovery",
+            "description": "Share what was exported from this module so other agents know",
+            "params": { "topic": "module:$resource", "category": "exports" }
+          },
+          {
+            "action": "releaseClaim",
+            "description": "Release the file claim so others know it's done"
+          },
+          {
+            "action": "publishEvent",
+            "description": "Announce work completion for this file",
+            "params": { "type": "work.completed" }
+          }
+        ]
+      }
+    },
+    "coordinator": {
+      "init": {
+        "steps": [
+          {
+            "action": "setState",
+            "description": "Set initial phase to work",
+            "params": { "key": "phase", "value": "work" }
+          },
+          {
+            "action": "publishEvent",
+            "description": "Announce phase transition",
+            "params": { "type": "phase.changed", "data": { "phase": "work" } }
+          }
+        ]
+      },
+      "work": {
+        "loop": true,
+        "steps": [
+          {
+            "action": "getEvents",
+            "description": "Monitor progress via work.completed events"
+          },
+          {
+            "action": "listClaims",
+            "description": "Check remaining active claims"
+          },
+          {
+            "action": "searchDiscoveries",
+            "description": "Check coverage — are all resources accounted for?"
+          }
+        ]
+      },
+      "finalize": {
+        "steps": [
+          {
+            "action": "listClaims",
+            "description": "Verify no active claims remain"
+          },
+          {
+            "action": "searchDiscoveries",
+            "description": "Verify all resources have discoveries"
+          },
+          {
+            "action": "setState",
+            "description": "Mark protocol as done",
+            "params": { "key": "phase", "value": "done" }
+          },
+          {
+            "action": "publishEvent",
+            "params": { "type": "phase.changed", "data": { "phase": "done" } }
+          }
+        ]
+      }
+    }
+  },
+
+  "completion": {
+    "condition": { "state_key": "phase", "equals": "done" },
+    "verify": [
+      { "all_resources_have_discovery": true },
+      { "no_active_claims": true }
+    ]
+  },
+
+  "errors": {
+    "claim_rejected": { "action": "skip_to_next" },
+    "claim_expired": { "action": "retry_after", "retry_after_ms": 1000 },
+    "halt_received": { "action": "graceful_stop" }
+  }
+}

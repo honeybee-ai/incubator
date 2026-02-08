@@ -1,0 +1,98 @@
+[incubator] pia-guard loaded
+[incubator] PIA Guard active — scanning writes, reads, and snapshots
+[incubator] Protocol loaded: "Monolith Module Split" (monolith-split)
+[incubator] Backend: memory
+[incubator] HTTP server listening on port 3198
+[incubator] MCP endpoint: http://localhost:3198/mcp
+[incubator] REST API:     http://localhost:3198/api/
+[incubator] WebSocket:    ws://localhost:3198/ws
+  15:14:27.914 [e2e-runner] REST PUT /api/state/phase
+[incubator] Session 29a9a721-ed06-4d2c-954c-874e6e57e7ec started (agent_00e0c879)
+[incubator] Session 05180ffe-5794-4e52-adaf-751b3a1568ff started (agent_c31a8b6d)
+[incubator] Session d01b66d6-810f-4725-bf94-849009007015 started (agent_d4c17796)
+  15:14:30.599 [agent_00e0c879] getProtocol role=worker phase=work
+  15:14:30.869 [agent_c31a8b6d] getProtocol role=worker phase=work
+  15:14:30.887 [agent_d4c17796] getProtocol role=worker phase=work
+  15:14:32.249 [agent_c31a8b6d] getState key=halt MISS
+  15:14:32.905 [agent_d4c17796] getState key=halt MISS
+  15:14:32.910 [agent_d4c17796] searchDiscoveries query=module → 0 results
+  15:14:33.345 [agent_00e0c879] getState key=halt MISS
+  15:14:33.350 [agent_00e0c879] searchDiscoveries query=module → 0 results
+  15:14:33.498 [agent_c31a8b6d] searchDiscoveries query=module exports → 0 results
+  15:14:35.297 [agent_c31a8b6d] claim resource=file:users.js → approved
+  15:14:36.158 [agent_d4c17796] claim resource=file:users.js → rejected (owner: agent_c31a8b6d)
+  15:14:37.354 [agent_d4c17796] claim resource=file:posts.js → approved
+  15:14:39.246 [agent_00e0c879] claim resource=file:users.js → rejected (owner: agent_c31a8b6d)
+  15:14:40.717 [agent_00e0c879] claim resource=file:posts.js → rejected (owner: agent_d4c17796)
+  15:14:41.714 [agent_00e0c879] claim resource=file:search.js → approved
+  15:14:41.754 [agent_c31a8b6d] publishDiscovery "module:file:users.js" [exports]
+  15:14:42.595 [agent_d4c17796] publishDiscovery "module:file:posts.js" [exports]
+  15:14:42.599 [agent_d4c17796] releaseClaim resource=file:posts.js OK
+  15:14:42.603 [agent_d4c17796] publishEvent type=work.completed
+  15:14:42.834 [agent_c31a8b6d] releaseClaim resource=file:users.js OK
+  15:14:44.104 [agent_c31a8b6d] publishEvent type=work.completed
+  15:14:44.523 [agent_d4c17796] getState key=halt MISS
+  15:14:44.527 [agent_d4c17796] claim resource=file:search.js → rejected (owner: agent_00e0c879)
+  15:14:45.244 [agent_c31a8b6d] claim resource=file:posts.js → approved
+  15:14:45.595 [agent_d4c17796] claim resource=file:cache.js → approved
+  15:14:47.964 [agent_00e0c879] publishDiscovery "module:file:search.js" [exports]
+  15:14:47.969 [agent_00e0c879] releaseClaim resource=file:search.js OK
+  15:14:47.974 [agent_00e0c879] publishEvent type=work.completed
+  15:14:49.374 [agent_00e0c879] claim resource=file:cache.js → rejected (owner: agent_d4c17796)
+  15:14:50.476 [agent_00e0c879] claim resource=file:utils.js → approved
+  15:14:50.576 [agent_d4c17796] publishDiscovery "module:file:cache.js" [exports]
+  15:14:50.579 [agent_d4c17796] releaseClaim resource=file:cache.js OK
+  15:14:50.582 [agent_d4c17796] publishEvent type=work.completed
+  15:14:52.218 [agent_d4c17796] getState key=halt MISS
+  15:14:52.223 [agent_d4c17796] claim resource=file:utils.js → rejected (owner: agent_00e0c879)
+  15:14:53.450 [agent_d4c17796] claim resource=file:monolith.js → approved
+  15:14:55.143 [agent_d4c17796] searchDiscoveries query=* → 4 results
+  15:14:55.930 [agent_00e0c879] publishDiscovery "module:file:utils.js" [exports]
+  15:14:55.934 [agent_00e0c879] releaseClaim resource=file:utils.js OK
+  15:14:55.937 [agent_00e0c879] publishEvent type=work.completed
+  15:14:57.455 [agent_00e0c879] claim resource=file:monolith.js → rejected (owner: agent_d4c17796)
+  15:14:57.658 [agent_d4c17796] searchDiscoveries query=utils → 5 results
+  15:14:58.786 [agent_00e0c879] searchDiscoveries query=* → 5 results
+  15:14:58.789 [agent_c31a8b6d] releaseClaim resource=file:posts.js OK
+  15:15:00.348 [agent_c31a8b6d] publishDiscovery "module:file:posts.js" [exports]
+  15:15:01.622 [agent_c31a8b6d] publishEvent type=work.completed
+  15:15:01.788 [agent_00e0c879] getState key=halt MISS
+  15:15:02.686 [agent_c31a8b6d] claim resource=file:search.js → approved
+  15:15:02.953 [agent_00e0c879] claim resource=file:monolith.js → rejected (owner: agent_d4c17796)
+  15:15:03.417 [agent_d4c17796] publishDiscovery "module:file:monolith.js" [exports]
+  15:15:03.421 [agent_d4c17796] releaseClaim resource=file:monolith.js OK
+  15:15:03.423 [agent_d4c17796] publishEvent type=work.completed
+  15:15:03.878 [agent_c31a8b6d] releaseClaim resource=file:search.js OK
+  15:15:04.540 [agent_00e0c879] getProtocol role=worker phase=work
+  15:15:05.293 [agent_c31a8b6d] publishDiscovery "module:file:search.js" [exports]
+  15:15:05.308 [agent_d4c17796] getState key=halt MISS
+  15:15:06.306 [agent_c31a8b6d] publishEvent type=work.completed
+  15:15:06.772 [agent_d4c17796] claim resource=file:users.js → approved
+  15:15:07.562 [agent_c31a8b6d] claim resource=file:cache.js → approved
+  15:15:08.494 [agent_d4c17796] releaseClaim resource=file:users.js OK
+  15:15:08.610 [agent_c31a8b6d] releaseClaim resource=file:cache.js OK
+  15:15:08.944 [agent_00e0c879] claim resource=file:monolith.js → approved
+  15:15:09.740 [agent_c31a8b6d] publishDiscovery "module:file:cache.js" [exports]
+  15:15:10.684 [agent_d4c17796] searchDiscoveries query=* → 9 results
+  15:15:11.702 [agent_c31a8b6d] publishEvent type=work.completed
+  15:15:12.844 [agent_c31a8b6d] claim resource=file:utils.js → approved
+  15:15:13.583 [agent_d4c17796] getState key=halt MISS
+  15:15:13.589 [agent_d4c17796] getState key=phase HIT
+  15:15:13.790 [agent_c31a8b6d] releaseClaim resource=file:utils.js OK
+  15:15:15.761 [agent_d4c17796] claim resource=file:search.js → approved
+  15:15:15.945 [agent_c31a8b6d] publishDiscovery "module:file:utils.js" [exports]
+  15:15:16.860 [agent_c31a8b6d] publishEvent type=work.completed
+  15:15:17.212 [agent_00e0c879] publishDiscovery "module:file:monolith.js" [exports]
+  15:15:17.216 [agent_00e0c879] releaseClaim resource=file:monolith.js OK
+  15:15:17.220 [agent_00e0c879] publishEvent type=work.completed
+  15:15:17.526 [agent_d4c17796] releaseClaim resource=file:search.js OK
+  15:15:18.194 [agent_c31a8b6d] claim resource=file:monolith.js → approved
+  15:15:20.376 [agent_d4c17796] getState key=halt MISS
+  15:15:21.643 [agent_d4c17796] claim resource=file:utils.js → approved
+  15:15:22.729 [agent_d4c17796] releaseClaim resource=file:utils.js OK
+  15:15:32.436 [agent_c31a8b6d] releaseClaim resource=file:monolith.js OK
+  15:15:34.210 [agent_c31a8b6d] publishDiscovery "module:file:monolith.js" [exports]
+  15:15:36.763 [agent_c31a8b6d] getState key=halt MISS
+  15:15:37.678 [agent_c31a8b6d] getState key=phase HIT
+  15:15:39.256 [agent_c31a8b6d] publishEvent type=work.completed
+  15:15:40.512 [agent_c31a8b6d] getProtocol role=worker phase=work
