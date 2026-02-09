@@ -14,7 +14,7 @@ export async function saveSnapshot(path: string, stores: Stores): Promise<void> 
     savedAt: new Date().toISOString(),
   };
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(snapshot, null, 2));
+  writeFileSync(path, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
 }
 
 export async function loadSnapshot(

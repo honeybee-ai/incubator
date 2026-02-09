@@ -3,7 +3,7 @@ import type {
   IntegrationFactory,
   IntegrationContext,
   IntegrationEvent,
-} from '@honeybee-ai/integration-sdk';
+} from '@honeybee-ai/hivemind-sdk/integrations';
 import { createHmac } from 'node:crypto';
 
 interface WebhookState {

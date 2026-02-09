@@ -38,7 +38,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@honeybee-ai/integration-sdk": "file:../../../sdk/packages/integration-sdk"
+    "@honeybee-ai/hivemind-sdk": "file:../../../sdk"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

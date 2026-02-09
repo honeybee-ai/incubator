@@ -14,36 +14,69 @@ export class RedisClaimStore implements IClaimStore {
     this.eventStore = eventStore;
   }
 
+  // Lua script for atomic claim check-and-set
+  // KEYS[1] = hash key, ARGV[1] = resource, ARGV[2] = new claim JSON,
+  // ARGV[3] = agentId, ARGV[4] = now (epoch ms)
+  private static CLAIM_SCRIPT = `
+    local raw = redis.call('HGET', KEYS[1], ARGV[1])
+    if raw then
+      local existing = cjson.decode(raw)
+      if existing.status == 'active' then
+        -- Check if existing claim has expired
+        local ttl = tonumber(existing.ttlMs or 0)
+        if ttl and ttl > 0 and existing.claimedAt then
+          -- Parse ISO date to epoch ms (compare with ARGV[4])
+          -- claimedAtMs is stored alongside for Lua comparison
+          local createdMs = tonumber(existing.claimedAtMs or 0)
+          if createdMs > 0 and (tonumber(ARGV[4]) > createdMs + ttl) then
+            -- expired, allow claim through
+          elseif existing.owner ~= ARGV[3] then
+            return raw
+          end
+        elseif existing.owner ~= ARGV[3] then
+          return raw
+        end
+      end
+    end
+    redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+    return nil
+  `;
+
   async claim(resource: string, value: string, agentId: string, ttlMs?: number): Promise<ClaimResult> {
-    const raw = await this.client.hget(this.hashKey, resource);
+    const now = new Date();
+    const claim: Claim & { claimedAtMs?: number } = {
+      resource,
+      value,
+      owner: agentId,
+      status: 'active',
+      claimedAt: now.toISOString(),
+      ttlMs,
+    };
+    // Store epoch ms for Lua script TTL comparison
+    (claim as any).claimedAtMs = now.getTime();
+    const claimJson = JSON.stringify(claim);
 
-    if (raw) {
-      const existing: Claim = JSON.parse(raw);
+    // Atomic check-and-set via Lua script
+    const result = await (this.client as any).eval(
+      RedisClaimStore.CLAIM_SCRIPT,
+      1, this.hashKey,
+      resource, claimJson, agentId, String(now.getTime())
+    );
 
-      if (existing.status === 'active' && !isExpired(existing.claimedAt, existing.ttlMs)) {
-        if (existing.owner !== agentId) {
-          return { status: 'rejected', claim: existing };
-        }
-        // Same owner re-claiming: update value/ttl
+    if (result) {
+      // Script returned existing claim data — rejected
+      const existing: Claim = JSON.parse(result);
+      if (existing.owner === agentId) {
+        // Same owner re-claiming: update
         existing.value = value;
         existing.ttlMs = ttlMs;
         await this.client.hset(this.hashKey, resource, JSON.stringify(existing));
         return { status: 'approved', claim: existing };
       }
+      return { status: 'rejected', claim: existing };
     }
 
-    const claim: Claim = {
-      resource,
-      value,
-      owner: agentId,
-      status: 'active',
-      claimedAt: new Date().toISOString(),
-      ttlMs,
-    };
-
-    await this.client.hset(this.hashKey, resource, JSON.stringify(claim));
     await this.eventStore.publish('claim.acquired', { resource, value, owner: agentId }, agentId);
-
     return { status: 'approved', claim };
   }
 

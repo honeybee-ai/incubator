@@ -13,8 +13,16 @@ import type { NotificationBus } from './bus.js';
 import type { Stores } from './stores/interfaces.js';
 import type { IncubatorEvent } from './types.js';
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
+import type { HoneycombTransport, TopicEvent } from './transports/types.js';
 
 const HONEYCOMB_PREFIX = 'honeycomb:';
+
+export interface TopicRouterOptions {
+  transport?: HoneycombTransport;
+  hiveName?: string;
+  hivePublishes?: string[];
+  hiveSubscribes?: string[];
+}
 
 export class TopicRouter {
   /** topic → set of subscribing namespace names */
@@ -25,11 +33,33 @@ export class TopicRouter {
   private subscriptions = new Map<string, Set<string>>();
   /** namespace → bus unsubscribe function */
   private unsubscribers = new Map<string, () => void>();
+  /** Optional cross-hive transport */
+  private transport?: HoneycombTransport;
+  private hiveName?: string;
+  private hivePublishes?: Set<string>;
+  private transportUnsubs: (() => void)[] = [];
 
   constructor(
     private getStores: (namespace: string) => Stores,
     private bus: NotificationBus,
-  ) {}
+    options?: TopicRouterOptions,
+  ) {
+    if (options?.transport && options.hiveName) {
+      this.transport = options.transport;
+      this.hiveName = options.hiveName;
+      this.hivePublishes = options.hivePublishes ? new Set(options.hivePublishes) : undefined;
+
+      // Subscribe to incoming remote events for each hive-level subscription
+      if (options.hiveSubscribes) {
+        for (const topic of options.hiveSubscribes) {
+          const unsub = options.transport.subscribe(topic, (event) => {
+            this.injectRemoteEvent(topic, event);
+          });
+          this.transportUnsubs.push(unsub);
+        }
+      }
+    }
+  }
 
   /** Register topics from a loaded protocol spec. */
   registerProtocol(namespace: string, spec: ProtocolSpec): void {
@@ -81,22 +111,55 @@ export class TopicRouter {
     const published = this.publishers.get(sourceNamespace);
     if (!published || !published.has(event.type)) return;
 
-    // Find all subscribing namespaces
+    // Local routing: find all subscribing namespaces within this incubator
     const subs = this.subscribers.get(event.type);
+    if (subs && subs.size > 0) {
+      for (const targetNs of subs) {
+        // Don't route back to self
+        if (targetNs === sourceNamespace) continue;
+
+        const stores = this.getStores(targetNs);
+        stores.events.publish(
+          event.type,
+          { ...(event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : { value: event.data }), _source: sourceNamespace },
+          `${HONEYCOMB_PREFIX}${sourceNamespace}`,
+        ).catch(() => {
+          // Best-effort routing — don't crash if a target namespace has issues
+        });
+      }
+    }
+
+    // Cross-hive routing: publish to transport if topic is in hive-level publishes
+    if (this.transport && this.hiveName) {
+      if (!this.hivePublishes || this.hivePublishes.has(event.type)) {
+        const topicEvent: TopicEvent = {
+          sourceHive: this.hiveName,
+          topic: event.type,
+          data: event.data,
+          publishedBy: event.publishedBy,
+          timestamp: event.publishedAt,
+        };
+        this.transport.publish(event.type, topicEvent).catch(() => {
+          // Best-effort cross-hive routing
+        });
+      }
+    }
+  }
+
+  /** Inject a remote event received via transport into local namespaces. */
+  injectRemoteEvent(topic: string, event: TopicEvent): void {
+    const subs = this.subscribers.get(topic);
     if (!subs || subs.size === 0) return;
 
+    const source = `${HONEYCOMB_PREFIX}${event.sourceHive}`;
     for (const targetNs of subs) {
-      // Don't route back to self
-      if (targetNs === sourceNamespace) continue;
-
       const stores = this.getStores(targetNs);
-      // Inject event into target namespace's event store
       stores.events.publish(
-        event.type,
-        { ...(event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : { value: event.data }), _source: sourceNamespace },
-        `${HONEYCOMB_PREFIX}${sourceNamespace}`,
+        topic,
+        { ...(event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : { value: event.data }), _source: event.sourceHive },
+        source,
       ).catch(() => {
-        // Best-effort routing — don't crash if a target namespace has issues
+        // Best-effort injection
       });
     }
   }

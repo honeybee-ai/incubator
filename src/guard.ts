@@ -175,14 +175,27 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
     return discoveries.filter(d => isClean(guard, [d.topic, d.content, d.category], verbose));
   };
 
+  // ─── Messages ───────────────────────────────────────────
+  const guardedMessages = Object.create(stores.messages) as Stores['messages'];
+  guardedMessages.send = async (from: string, to: string, content: string, opts?: { replyTo?: string }) => {
+    scanFields(guard, [content], verbose);
+    return await stores.messages.send(from, to, content, opts);
+  };
+
+  // ─── Help ──────────────────────────────────────────────
+  const guardedHelp = Object.create(stores.help) as Stores['help'];
+  guardedHelp.request = async (agentId: string, problem: string, needsCapability?: string, urgency?: string) => {
+    scanFields(guard, [problem, needsCapability], verbose);
+    return await stores.help.request(agentId, problem, needsCapability, urgency);
+  };
+
   return {
     state: guardedState,
     events: guardedEvents,
     claims: guardedClaims,
     discoveries: guardedDiscoveries,
-    // New coordination stores pass through unguarded — they're primitives, not content
-    messages: stores.messages,
-    help: stores.help,
+    messages: guardedMessages,
+    help: guardedHelp,
     progress: stores.progress,
     conflicts: stores.conflicts,
     roles: stores.roles,

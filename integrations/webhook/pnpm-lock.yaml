@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@honeybee-ai/integration-sdk':
-        specifier: file:../../../sdk/packages/integration-sdk
-        version: file:../../../sdk/packages/integration-sdk
+      '@honeybee-ai/hivemind-sdk':
+        specifier: file:../../../sdk
+        version: file:../../../sdk
     devDependencies:
       typescript:
         specifier: ^5.6.0
@@ -159,8 +159,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@honeybee-ai/integration-sdk@file:../../../sdk/packages/integration-sdk':
-    resolution: {directory: ../../../sdk/packages/integration-sdk, type: directory}
+  '@honeybee-ai/hivemind-sdk@file:../../../sdk':
+    resolution: {directory: ../../../sdk, type: directory}
     engines: {node: '>=20'}
 
   '@jridgewell/sourcemap-codec@1.5.5':
@@ -507,6 +507,9 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -578,7 +581,9 @@ snapshots:
   '@esbuild/win32-x64@0.21.5':
     optional: true
 
-  '@honeybee-ai/integration-sdk@file:../../../sdk/packages/integration-sdk': {}
+  '@honeybee-ai/hivemind-sdk@file:../../../sdk':
+    dependencies:
+      zod: 3.25.76
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
@@ -892,3 +897,5 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  zod@3.25.76: {}

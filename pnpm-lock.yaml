@@ -9,17 +9,17 @@ importers:
   .:
     dependencies:
       '@agentcoordinationprotocol/sdk':
-        specifier: file:../acp/packages/sdk
-        version: file:../acp/packages/sdk
+        specifier: ^0.1.0
+        version: 0.1.0
       '@agentcoordinationprotocol/spec':
-        specifier: file:../acp/packages/spec
-        version: file:../acp/packages/spec
+        specifier: ^0.2.1
+        version: 0.2.1
       '@honeybee-ai/carapace':
-        specifier: file:../carapace
-        version: file:../carapace
-      '@honeybee-ai/integration-sdk':
-        specifier: file:../sdk/packages/integration-sdk
-        version: file:../sdk/packages/integration-sdk
+        specifier: ^1.0.1
+        version: 1.0.1
+      '@honeybee-ai/hivemind-sdk':
+        specifier: file:../sdk
+        version: file:../sdk
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.26.0(zod@3.25.76)
@@ -58,12 +58,12 @@ importers:
 
 packages:
 
-  '@agentcoordinationprotocol/sdk@file:../acp/packages/sdk':
-    resolution: {directory: ../acp/packages/sdk, type: directory}
+  '@agentcoordinationprotocol/sdk@0.1.0':
+    resolution: {integrity: sha512-NzBEee/St0NdorieiwSTJu64dlR3XS+b5Ng/fGtS3Jo1Y6HOHDUB8ej5ZqC8YmW4uPXPlOYLt6hvS9BvhHm3rA==}
     engines: {node: '>=20'}
 
-  '@agentcoordinationprotocol/spec@file:../acp/packages/spec':
-    resolution: {directory: ../acp/packages/spec, type: directory}
+  '@agentcoordinationprotocol/spec@0.2.1':
+    resolution: {integrity: sha512-OYiZNNf7d3LMzzd2eBEBjCkej5HWpaCyBDfJ8CbrYmYOseGkbvUVdI4ljb4V5uPiOhHTb6vI1rrTiOyHu5qQJA==}
 
   '@esbuild/aix-ppc64@0.27.3':
     resolution: {integrity: sha512-9fJMTNFTWZMh5qwrBItuziu834eOCUcEqymSH7pY+zoMVEZg3gcPuBNxH1EvfVYe9h0x/Ptw8KBzv7qxb7l8dg==}
@@ -221,13 +221,13 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@honeybee-ai/carapace@file:../carapace':
-    resolution: {directory: ../carapace, type: directory}
+  '@honeybee-ai/carapace@1.0.1':
+    resolution: {integrity: sha512-SqIWp84dtOuUVdCw9Z5O3bO5m1+Rr5wLhrQoyxtVw2voMBg9/x7cE5HSG6cQ4fe7VGO3rZfQw60JKJVnuZ/MYg==}
     engines: {node: '>=16'}
     hasBin: true
 
-  '@honeybee-ai/integration-sdk@file:../sdk/packages/integration-sdk':
-    resolution: {directory: ../sdk/packages/integration-sdk, type: directory}
+  '@honeybee-ai/hivemind-sdk@file:../sdk':
+    resolution: {directory: ../sdk, type: directory}
     engines: {node: '>=20'}
 
   '@hono/node-server@1.19.9':
@@ -1169,9 +1169,9 @@ packages:
 
 snapshots:
 
-  '@agentcoordinationprotocol/sdk@file:../acp/packages/sdk': {}
+  '@agentcoordinationprotocol/sdk@0.1.0': {}
 
-  '@agentcoordinationprotocol/spec@file:../acp/packages/spec':
+  '@agentcoordinationprotocol/spec@0.2.1':
     optionalDependencies:
       js-yaml: 4.1.1
 
@@ -1253,9 +1253,11 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@honeybee-ai/carapace@file:../carapace': {}
+  '@honeybee-ai/carapace@1.0.1': {}
 
-  '@honeybee-ai/integration-sdk@file:../sdk/packages/integration-sdk': {}
+  '@honeybee-ai/hivemind-sdk@file:../sdk':
+    dependencies:
+      zod: 3.25.76
 
   '@hono/node-server@1.19.9(hono@4.11.9)':
     dependencies:

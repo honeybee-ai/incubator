@@ -21,6 +21,8 @@ import { existsSync } from 'node:fs';
 import type { BackendConfig } from './stores/backend.js';
 import type { Redis } from './stores/redis/db.js';
 import { IntegrationManager, loadIntegrationsConfig } from './integrations/index.js';
+import type { TopicRouterOptions } from './honeycomb.js';
+import type { HoneycombTransport } from './transports/types.js';
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {};
@@ -153,7 +155,25 @@ async function main() {
     } else {
       bus = new LocalBus();
     }
-    registry.setBus(bus);
+    // Cross-hive transport via IPC (set by wgl up)
+    let routerOptions: TopicRouterOptions | undefined;
+    const brokerSocket = process.env['HONEYCOMB_BROKER_SOCKET'];
+    const hiveName = process.env['HONEYCOMB_HIVE_NAME'];
+    if (brokerSocket && hiveName) {
+      const hivePublishes = process.env['HONEYCOMB_PUBLISHES']?.split(',').filter(Boolean) ?? [];
+      const hiveSubscribes = process.env['HONEYCOMB_SUBSCRIBES']?.split(',').filter(Boolean) ?? [];
+      const { IPCTransport } = await import('./transports/ipc.js');
+      const transport: HoneycombTransport = new IPCTransport({
+        socketPath: brokerSocket,
+        hiveName,
+        publishes: hivePublishes,
+        subscribes: hiveSubscribes,
+      });
+      await transport.connect();
+      console.error(`[incubator] Honeycomb: connected to broker as "${hiveName}"`);
+      routerOptions = { transport, hiveName, hivePublishes, hiveSubscribes };
+    }
+    registry.setBus(bus, routerOptions);
 
     // Try to load sirv for dashboard serving (optional)
     let serveDashboard: ((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: () => void) => void) | undefined;

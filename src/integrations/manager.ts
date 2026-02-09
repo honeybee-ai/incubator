@@ -11,7 +11,7 @@ import type {
   IntegrationEvent,
   IntegrationLogger,
   ToolDefinition,
-} from '@honeybee-ai/integration-sdk';
+} from '@honeybee-ai/hivemind-sdk/integrations';
 import type { NotificationBus } from '../bus.js';
 import type { IEventStore } from '../stores/interfaces.js';
 import type { IntegrationEntry } from './config.js';

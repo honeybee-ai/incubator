@@ -4,6 +4,7 @@ import { LocalBus } from './bus.js';
 import { createStores } from './server.js';
 import type { Stores } from './stores/interfaces.js';
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
+import type { HoneycombTransport, TopicEvent } from './transports/types.js';
 
 function makeSpec(topics?: { publishes?: string[]; subscribes?: string[] }): ProtocolSpec {
   return {
@@ -259,5 +260,118 @@ describe('TopicRouter', () => {
   it('getTopics returns empty for unknown namespace', () => {
     const topics = router.getTopics('unknown');
     expect(topics).toEqual({ publishes: [], subscribes: [] });
+  });
+
+  // ─── Transport integration ──────────────────────────────────
+
+  describe('with transport', () => {
+    function makeMockTransport(): HoneycombTransport & { published: { topic: string; event: TopicEvent }[]; handlers: Map<string, Set<(e: TopicEvent) => void>> } {
+      const published: { topic: string; event: TopicEvent }[] = [];
+      const handlers = new Map<string, Set<(e: TopicEvent) => void>>();
+      return {
+        published,
+        handlers,
+        async publish(topic: string, event: TopicEvent) { published.push({ topic, event }); },
+        subscribe(topic: string, handler: (e: TopicEvent) => void) {
+          let set = handlers.get(topic);
+          if (!set) { set = new Set(); handlers.set(topic, set); }
+          set.add(handler);
+          return () => { set!.delete(handler); };
+        },
+        async connect() {},
+        async close() {},
+      };
+    }
+
+    it('publishes matching events to transport', async () => {
+      const transport = makeMockTransport();
+      const transportRouter = new TopicRouter(
+        (ns) => {
+          let s = storesMap.get(ns);
+          if (!s) { s = createStores(); storesMap.set(ns, s); }
+          return s;
+        },
+        bus,
+        { transport, hiveName: 'my-hive', hivePublishes: ['code_changed'] },
+      );
+
+      const frontendStores = createStores();
+      storesMap.set('frontend', frontendStores);
+      const originalPublish = frontendStores.events.publish.bind(frontendStores.events);
+      frontendStores.events.publish = async (type: string, data: unknown, agentId: string) => {
+        const event = await originalPublish(type, data, agentId);
+        bus.publish('frontend', event);
+        return event;
+      };
+
+      transportRouter.registerProtocol('frontend', makeSpec({ publishes: ['code_changed'] }));
+      await frontendStores.events.publish('code_changed', { files: ['a.ts'] }, 'agent_fe');
+
+      await new Promise(r => setTimeout(r, 50));
+      expect(transport.published.length).toBe(1);
+      expect(transport.published[0].topic).toBe('code_changed');
+      expect(transport.published[0].event.sourceHive).toBe('my-hive');
+    });
+
+    it('does not publish non-hive topics to transport', async () => {
+      const transport = makeMockTransport();
+      const transportRouter = new TopicRouter(
+        (ns) => {
+          let s = storesMap.get(ns);
+          if (!s) { s = createStores(); storesMap.set(ns, s); }
+          return s;
+        },
+        bus,
+        { transport, hiveName: 'my-hive', hivePublishes: ['code_changed'] },
+      );
+
+      const frontendStores = createStores();
+      storesMap.set('frontend', frontendStores);
+      const originalPublish = frontendStores.events.publish.bind(frontendStores.events);
+      frontendStores.events.publish = async (type: string, data: unknown, agentId: string) => {
+        const event = await originalPublish(type, data, agentId);
+        bus.publish('frontend', event);
+        return event;
+      };
+
+      transportRouter.registerProtocol('frontend', makeSpec({ publishes: ['code_changed', 'internal'] }));
+      await frontendStores.events.publish('internal', { x: 1 }, 'agent_fe');
+
+      await new Promise(r => setTimeout(r, 50));
+      expect(transport.published.length).toBe(0);
+    });
+
+    it('injects remote events into local subscribers', async () => {
+      const transport = makeMockTransport();
+      const transportRouter = new TopicRouter(
+        (ns) => {
+          let s = storesMap.get(ns);
+          if (!s) { s = createStores(); storesMap.set(ns, s); }
+          return s;
+        },
+        bus,
+        { transport, hiveName: 'my-hive', hiveSubscribes: ['api_changed'] },
+      );
+
+      const backendStores = createStores();
+      storesMap.set('backend', backendStores);
+      transportRouter.registerProtocol('backend', makeSpec({ subscribes: ['api_changed'] }));
+
+      // Simulate remote event arrival
+      transportRouter.injectRemoteEvent('api_changed', {
+        sourceHive: 'other-hive',
+        topic: 'api_changed',
+        data: { endpoint: '/users' },
+        publishedBy: 'agent_remote',
+        timestamp: new Date().toISOString(),
+      });
+
+      await new Promise(r => setTimeout(r, 50));
+      const result = await backendStores.events.getEvents();
+      expect(result.events.length).toBe(1);
+      expect(result.events[0].type).toBe('api_changed');
+      expect(result.events[0].publishedBy).toBe('honeycomb:other-hive');
+      expect((result.events[0].data as Record<string, unknown>)._source).toBe('other-hive');
+    });
   });
 });

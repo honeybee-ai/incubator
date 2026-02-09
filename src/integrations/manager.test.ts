@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IntegrationManager } from './manager.js';
-import type { IntegrationModule, IntegrationEvent } from '@honeybee-ai/integration-sdk';
+import type { IntegrationModule, IntegrationEvent } from '@honeybee-ai/hivemind-sdk/integrations';
 import type { NotificationBus } from '../bus.js';
 import type { IEventStore } from '../stores/interfaces.js';
 

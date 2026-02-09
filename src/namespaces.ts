@@ -5,7 +5,7 @@ import type { Stores } from './stores/interfaces.js';
 import type { NotificationBus } from './bus.js';
 import type { IncubatorEvent } from './types.js';
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
-import { TopicRouter } from './honeycomb.js';
+import { TopicRouter, type TopicRouterOptions } from './honeycomb.js';
 
 const RESERVED_NAMES = new Set(['_ns']);
 
@@ -39,9 +39,16 @@ export class NamespaceRegistry {
     this.verbose = verbose;
   }
 
-  setBus(bus: NotificationBus): void {
+  setBus(bus: NotificationBus, routerOptions?: TopicRouterOptions): void {
     this.bus = bus;
-    this.router = new TopicRouter((ns) => this.get(ns), bus);
+    this.router = new TopicRouter((ns) => this.get(ns), bus, routerOptions);
+
+    // Re-register protocols loaded before the bus was set
+    for (const [ns, spec] of this.protocols) {
+      if (spec.topics) {
+        this.router.registerProtocol(ns, spec);
+      }
+    }
   }
 
   getRouter(): TopicRouter | undefined {
@@ -53,8 +60,18 @@ export class NamespaceRegistry {
       throw new Error(`'${namespace}' is a reserved name and cannot be used as a namespace`);
     }
 
+    // Validate namespace name
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(namespace)) {
+      throw new Error(`Invalid namespace: must match /^[a-z0-9][a-z0-9_-]{0,63}$/`);
+    }
+
     let stores = this.namespaces.get(namespace);
     if (stores) return stores;
+
+    // Cap total namespace count
+    if (this.namespaces.size >= 100) {
+      throw new Error('Maximum namespace count (100) reached');
+    }
 
     stores = createBackend({ ...this.backendConfig, namespace });
     if (this.bus) {

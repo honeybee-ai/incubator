@@ -5,7 +5,7 @@
  * or export a named `createIntegration` factory.
  */
 
-import type { IntegrationModule, IntegrationFactory } from '@honeybee-ai/integration-sdk';
+import type { IntegrationModule, IntegrationFactory } from '@honeybee-ai/hivemind-sdk/integrations';
 
 export async function loadIntegrationPackage(packageName: string): Promise<IntegrationModule> {
   // Use string indirection to avoid TS module resolution errors for optional deps

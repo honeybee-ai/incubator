@@ -10,25 +10,50 @@ interface Route {
   handler: (req: IncomingMessage, res: ServerResponse, stores: Stores, match: RegExpMatchArray, body: Record<string, unknown>) => Promise<void>;
 }
 
-function json(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, {
+function getAllowedOrigin(req: IncomingMessage): string {
+  const origin = req.headers.origin || '';
+  // Allow localhost (any port) for local development
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin;
+  // Allow honeyb.dev subdomains
+  if (/^https:\/\/[a-z0-9-]+\.honeyb\.dev$/.test(origin)) return origin;
+  return '';
+}
+
+function json(res: ServerResponse, status: number, data: unknown, req?: IncomingMessage): void {
+  const origin = req ? getAllowedOrigin(req) : 'http://localhost:5173';
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Agent-Id, X-Namespace',
-  });
+  };
+  if (origin) headers['Access-Control-Allow-Origin'] = origin;
+  res.writeHead(status, headers);
   res.end(JSON.stringify(data));
 }
 
 function getAgentId(req: IncomingMessage, body: Record<string, unknown>): string {
-  return (body.agentId as string) ?? (req.headers['x-agent-id'] as string) ?? 'rest_anonymous';
+  const id = (body.agentId as string) ?? (req.headers['x-agent-id'] as string) ?? 'rest_anonymous';
+  // Reject reserved honeycomb: prefix to prevent loop prevention bypass
+  if (id.startsWith('honeycomb:')) return 'rest_anonymous';
+  return id;
 }
+
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
 async function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   if (req.method === 'GET') return {};
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Payload too large'));
+        return;
+      }
+      data += chunk.toString();
+    });
     req.on('end', () => {
       if (!data) { resolve({}); return; }
       try { resolve(JSON.parse(data)); }
@@ -721,6 +746,28 @@ export async function handleRestRequest(
           json(res, 400, { error: 'Missing "spec" field (YAML/JSON string) or direct spec object' });
           return true;
         }
+
+        // Scan protocol spec text content for prompt injection via guarded state
+        const specTexts: string[] = [];
+        const s = spec as Record<string, unknown>;
+        if (s.roles && typeof s.roles === 'object') {
+          for (const role of Object.values(s.roles as Record<string, Record<string, unknown>>)) {
+            if (role?.description) specTexts.push(String(role.description));
+            if (role?.instructions) specTexts.push(String(role.instructions));
+          }
+        }
+        if (s.phases && typeof s.phases === 'object') {
+          for (const phase of Object.values(s.phases as Record<string, Record<string, unknown>>)) {
+            if (phase?.description) specTexts.push(String(phase.description));
+          }
+        }
+        if (specTexts.length > 0) {
+          // Use a state write to trigger carapace guard (write is reverted)
+          const scanKey = `__spec_scan_${Date.now()}`;
+          await stores.state.set(scanKey, specTexts.join(' '), getAgentId(req, body), '__scan');
+          await stores.state.delete(scanKey);
+        }
+
         registry.setProtocol(namespace, spec);
         json(res, 200, { loaded: true, name: spec.name, title: spec.title });
       } catch (err) {

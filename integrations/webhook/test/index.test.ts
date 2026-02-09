@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import createWebhookIntegration from '../src/index.js';
-import type { IntegrationContext, IntegrationEvent } from '@honeybee-ai/integration-sdk';
+import type { IntegrationContext, IntegrationEvent } from '@honeybee-ai/hivemind-sdk/integrations';
 
 function createCtx(config: Record<string, string> = {}): IntegrationContext {
   return {

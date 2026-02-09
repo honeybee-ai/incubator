@@ -1,6 +1,8 @@
 import type { IncubatorEvent } from '../types.js';
 import type { IEventStore } from './interfaces.js';
 
+const MAX_EVENTS = 10_000;
+
 export class EventStore implements IEventStore {
   private events: IncubatorEvent[] = [];
   private cursor = 0;
@@ -14,6 +16,10 @@ export class EventStore implements IEventStore {
       publishedAt: new Date().toISOString(),
     };
     this.events.push(event);
+    // Evict oldest events when exceeding cap
+    if (this.events.length > MAX_EVENTS) {
+      this.events = this.events.slice(-MAX_EVENTS);
+    }
     return event;
   }
 
