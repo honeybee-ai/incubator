@@ -1,3 +1,5 @@
+import type { AcpClient } from '@agentcoordinationprotocol/sdk';
+
 interface ProtocolData {
   loaded: boolean;
   spec?: {
@@ -156,12 +158,11 @@ export function generateSystemPrompt(protocolResponse: ProtocolResponse, agentId
   return lines.join('\n');
 }
 
-export async function fetchProtocol(role: string, serverUrl: string): Promise<ProtocolResponse | null> {
+export async function fetchProtocol(role: string, client: AcpClient): Promise<ProtocolResponse | null> {
   try {
-    const url = `${serverUrl}/api/protocol?role=${encodeURIComponent(role)}`;
-    const res = await fetch(url);
+    const res = await client.getProtocol(role);
     if (!res.ok) return null;
-    const data = await res.json() as ProtocolData | ProtocolResponse;
+    const data = res.data as unknown as ProtocolData | ProtocolResponse;
 
     // If it's the raw spec endpoint (loaded: true, spec: {...}), we can't generate a prompt from that
     // We need the getProtocol tool response format which includes rendered instructions
@@ -213,9 +214,9 @@ function buildFromRawSpec(data: ProtocolData, role: string): ProtocolResponse | 
 export async function refreshPrompt(
   agentId: string,
   role: string,
-  serverUrl: string,
+  client: AcpClient,
 ): Promise<string | null> {
-  const protocol = await fetchProtocol(role, serverUrl);
+  const protocol = await fetchProtocol(role, client);
   if (!protocol) return null;
   return generateSystemPrompt(protocol, agentId);
 }

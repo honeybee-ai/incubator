@@ -41,7 +41,7 @@ async function parseBody(req: IncomingMessage): Promise<Record<string, unknown>>
 const RESOURCE_KEYWORDS = new Set([
   'state', 'claims', 'events', 'discoveries', 'health', 'protocol',
   'messages', 'help', 'progress', 'conflicts', 'roles', 'reinforcements', 'governance',
-  'control',
+  'control', 'topics',
 ]);
 
 const routes: Route[] = [
@@ -592,7 +592,7 @@ const routes: Route[] = [
     pattern: /^\/api\/control\/status$/,
     handler: async (req, res, stores) => {
       const url = new URL(req.url!, 'http://localhost');
-      const agentId = url.searchParams.get('agentId') ?? undefined;
+      const agentId = url.searchParams.get('agentId') ?? req.headers['x-agent-id'] as string ?? undefined;
       const status = stores.control.getStatus(agentId);
       json(res, 200, status);
     },
@@ -732,6 +732,70 @@ export async function handleRestRequest(
       }
       return true;
     }
+  }
+
+  // ─── Topic routes (Honeycomb) ──────────────────────────────
+  const topicMatch = rewrittenPath.match(/^\/api\/topics(?:\/(.+))?$/);
+  if (topicMatch) {
+    const router = registry.getRouter();
+    if (!router) {
+      json(res, 501, { error: 'Honeycomb topic routing not enabled (no notification bus)' });
+      return true;
+    }
+
+    const subpath = topicMatch[1]; // e.g. "subscribe/code_changed" or "subscribe" or undefined
+
+    // GET /api/topics — get all topics for this namespace
+    if (req.method === 'GET' && !subpath) {
+      const topics = router.getTopics(namespace);
+      json(res, 200, topics);
+      return true;
+    }
+
+    // POST /api/topics/subscribe — subscribe to a topic
+    if (req.method === 'POST' && subpath === 'subscribe') {
+      const topic = body.topic as string;
+      if (!topic) {
+        json(res, 400, { error: 'Missing required field: topic' });
+        return true;
+      }
+      router.subscribe(namespace, topic);
+      json(res, 200, { subscribed: true, topic });
+      return true;
+    }
+
+    // POST /api/topics/publish — declare a published topic
+    if (req.method === 'POST' && subpath === 'publish') {
+      const topic = body.topic as string;
+      if (!topic) {
+        json(res, 400, { error: 'Missing required field: topic' });
+        return true;
+      }
+      router.publish(namespace, topic);
+      json(res, 200, { published: true, topic });
+      return true;
+    }
+
+    // DELETE /api/topics/subscribe/:topic — unsubscribe from a topic
+    const unsubMatch = subpath?.match(/^subscribe\/(.+)$/);
+    if (req.method === 'DELETE' && unsubMatch) {
+      const topic = decodeURIComponent(unsubMatch[1]);
+      router.unsubscribe(namespace, topic);
+      json(res, 200, { unsubscribed: true, topic });
+      return true;
+    }
+
+    // DELETE /api/topics/publish/:topic — remove a published topic
+    const unpubMatch = subpath?.match(/^publish\/(.+)$/);
+    if (req.method === 'DELETE' && unpubMatch) {
+      const topic = decodeURIComponent(unpubMatch[1]);
+      router.unpublish(namespace, topic);
+      json(res, 200, { unpublished: true, topic });
+      return true;
+    }
+
+    json(res, 404, { error: `No route: ${req.method} ${pathname}` });
+    return true;
   }
 
   for (const route of routes) {

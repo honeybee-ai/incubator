@@ -21,9 +21,9 @@ describe('MCP Server Integration', () => {
     return JSON.parse(text);
   }
 
-  it('lists all 16 tools', async () => {
+  it('lists all 19 tools', async () => {
     const { tools } = await client.listTools();
-    expect(tools.length).toBe(16);
+    expect(tools.length).toBe(19);
     const names = tools.map(t => t.name);
     expect(names).toContain('incubator_getState');
     expect(names).toContain('incubator_setState');

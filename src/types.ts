@@ -39,73 +39,16 @@ export interface ClaimResult {
   claim: Claim;
 }
 
-export interface Message {
-  id: string;
-  from: string;
-  to: string;
-  content: string;
-  replyTo?: string;
-  sentAt: string;
-}
-
-export interface HelpRequest {
-  id: string;
-  from: string;
-  problem: string;
-  needs_capability?: string;
-  urgency?: 'low' | 'normal' | 'high';
-  status: 'open' | 'claimed' | 'resolved';
-  claimedBy?: string;
-  createdAt: string;
-}
-
-export interface ProgressReport {
-  claim: string;
-  agent: string;
-  progress: number;
-  note?: string;
-  updatedAt: string;
-}
-
-export interface Conflict {
-  id: string;
-  flaggedBy: string;
-  discovery_a: string;
-  discovery_b: string;
-  reason: string;
-  status: 'open' | 'resolved';
-  resolvedBy?: string;
-  resolution?: string;
-  createdAt: string;
-}
-
-export interface RoleAssignment {
-  agent: string;
-  role: string;
-  assignedAt: string;
-}
-
-export interface ReinforcementRequest {
-  id: string;
-  requestedBy: string;
-  role: string;
-  count: number;
-  reason?: string;
-  status: 'pending' | 'approved' | 'denied';
-  denialReason?: string;
-  createdAt: string;
-}
-
-export interface Proposal {
-  id: string;
-  proposedBy: string;
-  action: string;
-  detail?: string;
-  requires_quorum: number;
-  endorsements: string[];
-  status: 'open' | 'approved' | 'rejected';
-  createdAt: string;
-}
+// Runtime types — re-exported from spec (single source of truth)
+export type {
+  Message,
+  HelpRequest,
+  ProgressReport,
+  Conflict,
+  RoleAssignment,
+  ReinforcementRequest,
+  Proposal,
+} from '@agentcoordinationprotocol/spec';
 
 export interface Snapshot {
   state: StateEntry[];

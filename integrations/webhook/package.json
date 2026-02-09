@@ -1,0 +1,47 @@
+{
+  "name": "@honeybee-ai/integration-webhook",
+  "version": "0.1.0",
+  "description": "Generic webhook integration for Honeybee Incubator — forward ACP events to HTTP endpoints",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "honeybee",
+    "incubator",
+    "integration",
+    "webhook",
+    "acp",
+    "agent-coordination"
+  ],
+  "author": "Honeybee AI <hello@honeyb.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/honeybee-ai/incubator.git",
+    "directory": "integrations/webhook"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@honeybee-ai/integration-sdk": "file:../../../sdk/packages/integration-sdk"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

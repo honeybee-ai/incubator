@@ -35,9 +35,9 @@ describe('getProtocol MCP Integration', () => {
     return JSON.parse(text);
   }
 
-  it('lists 16 tools (15 + getProtocol)', async () => {
+  it('lists 19 tools (15 + getProtocol + 3 topic tools)', async () => {
     const { tools } = await client.listTools();
-    expect(tools.length).toBe(16);
+    expect(tools.length).toBe(19);
     expect(tools.map(t => t.name)).toContain('incubator_getProtocol');
   });
 

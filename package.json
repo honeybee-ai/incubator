@@ -17,9 +17,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "test": "node --experimental-vm-modules node_modules/.bin/vitest run",
+    "test": "vitest run",
     "test:watch": "node --experimental-vm-modules node_modules/.bin/vitest",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "pnpm run build && pnpm test"
   },
   "keywords": [
     "mcp",
@@ -48,9 +48,11 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@agentcoordinationprotocol/spec": "^0.2.0",
+    "@agentcoordinationprotocol/sdk": "file:../acp/packages/sdk",
+    "@agentcoordinationprotocol/spec": "file:../acp/packages/spec",
+    "@honeybee-ai/integration-sdk": "file:../sdk/packages/integration-sdk",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@honeybee-ai/carapace": "^1.0.0",
+    "@honeybee-ai/carapace": "file:../carapace",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -59,6 +61,9 @@
     "@types/ws": "^8.5.14",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
   },
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2",

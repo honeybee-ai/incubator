@@ -171,7 +171,7 @@ WebSocket auto-enables in HTTP mode when the `ws` package is installed. If not i
 
 ```bash
 # Install ws to enable WebSocket push
-npm install ws
+pnpm add ws
 
 # Quick test with wscat
 wscat -c ws://localhost:3100/ws
@@ -251,8 +251,8 @@ node dist/index.js --http --no-guard
 ## Quick Start
 
 ```bash
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ### Start the server
@@ -478,11 +478,11 @@ incubator/
 ```bash
 # Unit + integration tests (stores, guard, WebSocket, namespaces, protocol)
 # Redis tests skip gracefully if no Redis is running
-npm test
+pnpm test
 
 # Run with Redis for full coverage
 docker run -d --name redis-test -p 6379:6379 redis:alpine
-npm test
+pnpm test
 docker stop redis-test && docker rm redis-test
 
 # Simulated E2E (4 workers × 10 rounds, no LLM)

@@ -4,6 +4,14 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseRoleCount, AgentRunner } from './runner.js';
 import type { ProviderConfig, RunnerConfig } from './types.js';
+import { createMockClient, resetMockClient } from './test-helpers.js';
+
+// Mock the SDK — createAcpClient returns a shared mock client
+const mockClientInstance = createMockClient();
+
+vi.mock('@agentcoordinationprotocol/sdk', () => ({
+  createAcpClient: vi.fn(() => mockClientInstance),
+}));
 
 describe('parseRoleCount', () => {
   it('returns 1 for undefined', () => {
@@ -47,7 +55,10 @@ describe('AgentRunner', () => {
     model: 'test-model',
   };
 
-  afterEach(() => { vi.restoreAllMocks(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetMockClient(mockClientInstance);
+  });
 
   function makeConfig(overrides?: Partial<RunnerConfig>): RunnerConfig {
     return {
@@ -61,30 +72,28 @@ describe('AgentRunner', () => {
 
   it('runs a full ReAct loop: tool call → result → text → done', async () => {
     let callCount = 0;
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+
+    // Mock protocol fetch to return a loaded spec
+    mockClientInstance.getProtocol.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        loaded: true,
+        spec: {
+          name: 'test',
+          title: 'Test',
+          roles: { worker: { description: 'Worker' } },
+          phases: { work: { description: 'Work phase' } },
+        },
+      },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const urlStr = String(url);
-
-      // Protocol fetch
-      if (urlStr.includes('/api/protocol')) {
-        return {
-          ok: true,
-          json: async () => ({
-            loaded: true,
-            spec: {
-              name: 'test',
-              title: 'Test',
-              roles: { worker: { description: 'Worker' } },
-              phases: { work: { description: 'Work phase' } },
-            },
-          }),
-        };
-      }
-
       // Ollama chat API
       if (urlStr.includes('/api/chat')) {
         callCount++;
         if (callCount === 1) {
-          // First call: return a tool call
           return {
             ok: true,
             json: async () => ({
@@ -98,7 +107,6 @@ describe('AgentRunner', () => {
             }),
           };
         }
-        // Second call: return text (done)
         return {
           ok: true,
           json: async () => ({
@@ -106,9 +114,7 @@ describe('AgentRunner', () => {
           }),
         };
       }
-
-      // REST API call (tool execution)
-      return { text: async () => '{"found":true,"entry":{"key":"phase","value":"work"}}' };
+      return { text: async () => '{}' };
     }));
 
     const runner = new AgentRunner(makeConfig());
@@ -123,17 +129,17 @@ describe('AgentRunner', () => {
     expect(result.status).toBe('completed');
     expect(result.agentId).toBe('test_worker');
     expect(result.iterations).toBe(2);
+    // Verify SDK was used for role registration
+    expect(mockClientInstance.requestRole).toHaveBeenCalledWith('worker');
+    // Verify SDK was used for tool execution
+    expect(mockClientInstance.getStateKey).toHaveBeenCalledWith('phase');
+    // Verify SDK was used for control status
+    expect(mockClientInstance.getControlStatus).toHaveBeenCalled();
   });
 
   it('respects maxIterations limit', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const urlStr = String(url);
-      if (urlStr.includes('/api/protocol')) {
-        return {
-          ok: true,
-          json: async () => ({ loaded: false }),
-        };
-      }
       if (urlStr.includes('/api/chat')) {
         return {
           ok: true,
@@ -148,7 +154,7 @@ describe('AgentRunner', () => {
           }),
         };
       }
-      return { text: async () => '{"found":false}' };
+      return { text: async () => '{}' };
     }));
 
     const runner = new AgentRunner(makeConfig({ maxIterations: 3 }));
@@ -170,12 +176,9 @@ describe('AgentRunner', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const urlStr = String(url);
-      if (urlStr.includes('/api/protocol')) {
-        return { ok: true, json: async () => ({ loaded: false }) };
-      }
       if (urlStr.includes('/api/chat')) {
         callCount++;
-        if (callCount >= 2) runner.stop(); // Stop after 2nd iteration
+        if (callCount >= 2) runner.stop();
         return {
           ok: true,
           json: async () => ({
@@ -207,9 +210,6 @@ describe('AgentRunner', () => {
   it('handles LLM errors gracefully', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const urlStr = String(url);
-      if (urlStr.includes('/api/protocol')) {
-        return { ok: true, json: async () => ({ loaded: false }) };
-      }
       if (urlStr.includes('/api/chat')) {
         return { ok: false, status: 500, text: async () => 'Internal server error' };
       }
@@ -233,9 +233,6 @@ describe('AgentRunner', () => {
     let chatCalls = 0;
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const urlStr = String(url);
-      if (urlStr.includes('/api/protocol')) {
-        return { ok: true, json: async () => ({ loaded: false }) };
-      }
       if (urlStr.includes('/api/chat')) {
         chatCalls++;
         if (chatCalls <= 2) {
@@ -259,7 +256,7 @@ describe('AgentRunner', () => {
           }),
         };
       }
-      return { text: async () => '{"found":false}' };
+      return { text: async () => '{}' };
     }));
 
     const runner = new AgentRunner(makeConfig());
@@ -272,11 +269,10 @@ describe('AgentRunner', () => {
     });
 
     expect(result.status).toBe('completed');
-    expect(result.iterations).toBe(3); // 2 tool calls + 1 text
+    expect(result.iterations).toBe(3);
   });
 
   it('spawnFromProtocol parses roles and spawns agents', async () => {
-    // Write a real temp spec file
     const specContent = JSON.stringify({
       acp: '1.0',
       name: 'test-protocol',
@@ -293,12 +289,8 @@ describe('AgentRunner', () => {
     const tmpFile = join(tmpdir(), `test-spec-${Date.now()}.acp.json`);
     writeFileSync(tmpFile, specContent);
 
-    // Minimal fetch mock that ends agents quickly
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const urlStr = String(url);
-      if (urlStr.includes('/api/protocol')) {
-        return { ok: true, json: async () => ({ loaded: false }) };
-      }
       if (urlStr.includes('/api/chat')) {
         return {
           ok: true,
@@ -321,7 +313,6 @@ describe('AgentRunner', () => {
       expect(workerResults).toHaveLength(2);
       expect(coordResults).toHaveLength(1);
 
-      // All should have unique agentIds
       const ids = results.map(r => r.agentId);
       expect(new Set(ids).size).toBe(3);
     } finally {

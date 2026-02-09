@@ -25,6 +25,8 @@ export interface ServerOptions {
   onSave?: () => void;
   /** Protocol spec loaded for this namespace, if any */
   getProtocol?: () => ProtocolSpec | undefined;
+  /** TopicRouter for cross-namespace topic management */
+  getTopicRouter?: () => import('./honeycomb.js').TopicRouter | undefined;
 }
 
 export function createStores(): Stores {
@@ -463,6 +465,78 @@ export function createServer(stores: Stores, options: ServerOptions = {}) {
       maybeSave();
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ resumed }) }],
+      };
+    }
+  );
+
+  // ─── Topic Tools (Honeycomb) ────────────────────────────
+
+  server.registerTool(
+    'incubator_getTopics',
+    {
+      description: 'List published and subscribed cross-namespace topics for this namespace. Topics enable event routing between separate protocol namespaces.',
+      inputSchema: {},
+    },
+    async () => {
+      const router = options.getTopicRouter?.();
+      const ns = options.namespace ?? 'default';
+      if (!router) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Topic routing not enabled' }) }],
+        };
+      }
+      const topics = router.getTopics(ns);
+      log('getTopics', getAgentId(), `pub=${topics.publishes.length} sub=${topics.subscribes.length}`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(topics) }],
+      };
+    }
+  );
+
+  server.registerTool(
+    'incubator_subscribeTopic',
+    {
+      description: 'Subscribe this namespace to a cross-namespace topic at runtime. Events published to this topic in other namespaces will appear in your event stream.',
+      inputSchema: {
+        topic: z.string().describe('The topic (event type) to subscribe to'),
+      },
+    },
+    async (args: { topic: string }) => {
+      const router = options.getTopicRouter?.();
+      const ns = options.namespace ?? 'default';
+      if (!router) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Topic routing not enabled' }) }],
+        };
+      }
+      router.subscribe(ns, args.topic);
+      log('subscribeTopic', getAgentId(), `topic=${args.topic}`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ subscribed: true, topic: args.topic }) }],
+      };
+    }
+  );
+
+  server.registerTool(
+    'incubator_publishTopic',
+    {
+      description: 'Declare this namespace as publishing a cross-namespace topic at runtime. Events matching this topic will be routed to subscribing namespaces.',
+      inputSchema: {
+        topic: z.string().describe('The topic (event type) to publish'),
+      },
+    },
+    async (args: { topic: string }) => {
+      const router = options.getTopicRouter?.();
+      const ns = options.namespace ?? 'default';
+      if (!router) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Topic routing not enabled' }) }],
+        };
+      }
+      router.publish(ns, args.topic);
+      log('publishTopic', getAgentId(), `topic=${args.topic}`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ published: true, topic: args.topic }) }],
       };
     }
   );

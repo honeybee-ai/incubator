@@ -401,6 +401,47 @@ describe('REST Control Endpoints', () => {
       expect(data2.paused).toBe(false);
     });
 
+    it('returns agent-specific halt via X-Agent-Id header', async () => {
+      await post('/api/control/halt', {
+        reason: 'agent_1 misbehaved',
+        target: 'agent_1',
+        agentId: 'supervisor',
+      });
+
+      const { data } = await get('/api/control/status', { 'X-Agent-Id': 'agent_1' });
+      expect(data.halted).toBe(true);
+      expect(data.haltReason).toBe('agent_1 misbehaved');
+
+      // Another agent via header should not be halted
+      const { data: data2 } = await get('/api/control/status', { 'X-Agent-Id': 'agent_2' });
+      expect(data2.halted).toBe(false);
+      expect(data2.paused).toBe(false);
+    });
+
+    it('returns agent-specific pause via X-Agent-Id header', async () => {
+      await post('/api/control/pause', {
+        reason: 'throttled',
+        target: 'agent_1',
+        agentId: 'supervisor',
+      });
+
+      const { data } = await get('/api/control/status', { 'X-Agent-Id': 'agent_1' });
+      expect(data.paused).toBe(true);
+      expect(data.pauseReason).toBe('throttled');
+    });
+
+    it('query param takes priority over X-Agent-Id header', async () => {
+      await post('/api/control/halt', {
+        reason: 'agent_1 halted',
+        target: 'agent_1',
+        agentId: 'supervisor',
+      });
+
+      // Query param says agent_2 (not halted), header says agent_1 (halted)
+      const { data } = await get('/api/control/status?agentId=agent_2', { 'X-Agent-Id': 'agent_1' });
+      expect(data.halted).toBe(false);
+    });
+
     it('protocol halt takes priority over agent pause', async () => {
       await post('/api/control/pause', {
         reason: 'agent throttled',

@@ -5,6 +5,7 @@ import type { Stores } from './stores/interfaces.js';
 import type { NotificationBus } from './bus.js';
 import type { IncubatorEvent } from './types.js';
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
+import { TopicRouter } from './honeycomb.js';
 
 const RESERVED_NAMES = new Set(['_ns']);
 
@@ -27,6 +28,7 @@ export class NamespaceRegistry {
   private verbose?: boolean;
   private backendConfig: BackendConfig;
   private bus?: NotificationBus;
+  private router?: TopicRouter;
 
   constructor(backendConfig?: BackendConfig) {
     this.backendConfig = backendConfig ?? { type: 'memory' };
@@ -39,6 +41,11 @@ export class NamespaceRegistry {
 
   setBus(bus: NotificationBus): void {
     this.bus = bus;
+    this.router = new TopicRouter((ns) => this.get(ns), bus);
+  }
+
+  getRouter(): TopicRouter | undefined {
+    return this.router;
   }
 
   get(namespace: string): Stores {
@@ -60,6 +67,12 @@ export class NamespaceRegistry {
       stores = createGuardedStores(stores, this.guard, this.verbose);
     }
     this.namespaces.set(namespace, stores);
+
+    // Watch this namespace for cross-namespace topic routing
+    if (this.router) {
+      this.router.watch(namespace);
+    }
+
     return stores;
   }
 
@@ -68,6 +81,9 @@ export class NamespaceRegistry {
   }
 
   delete(namespace: string): boolean {
+    if (this.router) {
+      this.router.clearNamespace(namespace);
+    }
     return this.namespaces.delete(namespace);
   }
 
@@ -77,6 +93,9 @@ export class NamespaceRegistry {
 
   setProtocol(namespace: string, spec: ProtocolSpec): void {
     this.protocols.set(namespace, spec);
+    if (this.router && spec.topics) {
+      this.router.registerProtocol(namespace, spec);
+    }
   }
 
   getProtocol(namespace: string): ProtocolSpec | undefined {

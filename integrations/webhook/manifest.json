@@ -1,0 +1,16 @@
+{
+  "name": "webhook",
+  "title": "Generic Webhook",
+  "description": "Forward ACP events to any HTTP endpoint with optional HMAC signing",
+  "category": "notification",
+  "version": "0.1.0",
+  "author": "Honeybee AI",
+  "npm_package": "@honeybee-ai/integration-webhook",
+  "config_keys": [
+    { "key": "WEBHOOK_URL", "description": "HTTP endpoint to POST events to", "required": true },
+    { "key": "WEBHOOK_SECRET", "description": "HMAC-SHA256 secret for signing payloads" },
+    { "key": "EVENT_TYPES", "description": "Comma-separated event types to forward (empty = all)" },
+    { "key": "WEBHOOK_TIMEOUT", "description": "Request timeout in ms (default: 5000)" }
+  ],
+  "event_types": ["*"]
+}

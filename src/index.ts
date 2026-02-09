@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { BackendConfig } from './stores/backend.js';
 import type { Redis } from './stores/redis/db.js';
+import { IntegrationManager, loadIntegrationsConfig } from './integrations/index.js';
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {};
@@ -82,6 +83,15 @@ async function main() {
 
   // Protocol loading
   const protocolPath = typeof args['protocol'] === 'string' ? args['protocol'] : undefined;
+
+  // Integration loading (--integration=name or reads from config file)
+  const cliIntegrations: string[] = [];
+  for (const arg of process.argv.slice(2)) {
+    if (arg.startsWith('--integration=')) {
+      cliIntegrations.push(arg.slice('--integration='.length));
+    }
+  }
+  const loadIntegrations = cliIntegrations.length > 0 || args['integrations'] === true;
 
   const registry = new NamespaceRegistry(backendConfig);
   let sanitizeSnapshotFn: undefined | ((snapshot: import('./types.js').Snapshot) => void);
@@ -241,6 +251,52 @@ async function main() {
       // ws not installed or failed to load — WebSocket disabled
     }
 
+    // Load integrations
+    let integrationManager: IntegrationManager | undefined;
+    if (loadIntegrations) {
+      const defaultStores = registry.get('default');
+      integrationManager = new IntegrationManager({
+        namespace: 'default',
+        bus,
+        eventStore: defaultStores.events,
+        verbose,
+      });
+
+      const config = loadIntegrationsConfig();
+      if (cliIntegrations.length > 0) {
+        // Load only CLI-specified integrations (must be in config or treated as package names)
+        for (const name of cliIntegrations) {
+          const entry = config[name];
+          if (entry) {
+            try {
+              await integrationManager.load(name, entry.package, entry.config);
+            } catch (err) {
+              console.error(`[integrations] Failed to load "${name}": ${(err as Error).message}`);
+            }
+          } else {
+            // Treat name as npm package name directly
+            try {
+              await integrationManager.load(name, name);
+            } catch (err) {
+              console.error(`[integrations] Failed to load "${name}": ${(err as Error).message}`);
+            }
+          }
+        }
+      } else {
+        // Load all enabled integrations from config
+        await integrationManager.loadFromConfig(config);
+      }
+
+      const loaded = integrationManager.getLoadedNames();
+      if (loaded.length > 0) {
+        console.error(`[incubator] Integrations: ${loaded.join(', ')}`);
+        const tools = integrationManager.getTools();
+        if (tools.length > 0) {
+          console.error(`[incubator] Integration tools: ${tools.map(t => t.name).join(', ')}`);
+        }
+      }
+    }
+
     httpServer.listen(port, () => {
       console.error(`[incubator] HTTP server listening on port ${port}`);
       console.error(`[incubator] MCP endpoint: http://localhost:${port}/mcp`);
@@ -301,6 +357,7 @@ async function main() {
     process.on('SIGINT', async () => {
       console.error('\n[incubator] Shutting down...');
       if (agentRunner) agentRunner.stop();
+      if (integrationManager) await integrationManager.stopAll();
       if (wsManager) wsManager.close();
       await bus.close();
       if (persistPath && !skipPersistence) {

@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { loadSpecFile } from '@agentcoordinationprotocol/spec';
+import { createAcpClient } from '@agentcoordinationprotocol/sdk';
+import type { AcpClient } from '@agentcoordinationprotocol/sdk';
 import type { AgentConfig, AgentStatus, ProviderConfig, RunnerConfig } from './types.js';
 import { chatCompletion, checkConnection, checkModel } from './providers.js';
 import { TOOL_DEFS, executeToolCall } from './tools.js';
@@ -144,22 +146,21 @@ export class AgentRunner {
       }
     };
 
+    // Create ACP SDK client for this agent
+    const client = createAcpClient({ server: serverUrl, agentId, namespace: 'default' });
+
     try {
       // 0. Register role with the server
       agentLog(`Starting (role=${role}, model=${provider.model})`);
       try {
-        await fetch(`${serverUrl}/api/roles/request`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Agent-Id': agentId },
-          body: JSON.stringify({ role }),
-        });
+        await client.requestRole(role);
         agentLog(`Registered role: ${role}`);
       } catch {
         agentLog('Warning: could not register role (server may not support it)');
       }
 
       // 1. Fetch protocol and generate system prompt
-      const protocolData = await fetchProtocol(role, serverUrl);
+      const protocolData = await fetchProtocol(role, client);
 
       let systemPrompt: string;
       if (protocolData) {
@@ -215,7 +216,7 @@ export class AgentRunner {
           const name = toolCall.function.name;
           agentLog(`Tool: ${name}`);
 
-          const result = await executeToolCall(toolCall, agentId, serverUrl);
+          const result = await executeToolCall(toolCall, client);
 
           // Log result preview
           const resultPreview = result.length > 150
@@ -231,7 +232,7 @@ export class AgentRunner {
           });
 
           // Check halt/pause status after each tool call
-          const controlStatus = await checkControlStatus(agentId, serverUrl);
+          const controlStatus = await checkControlStatus(client);
           if (controlStatus.halted) {
             agentLog(`HALTED: ${controlStatus.haltReason ?? 'no reason'}`);
             halted = true;
@@ -239,7 +240,7 @@ export class AgentRunner {
           }
           if (controlStatus.paused) {
             agentLog(`PAUSED: ${controlStatus.pauseReason ?? 'no reason'} — waiting for resume...`);
-            const resumeReason = await waitForResume(agentId, serverUrl, agentLog);
+            const resumeReason = await waitForResume(client, agentLog);
             agentLog(`RESUMED: ${resumeReason}`);
             // Inject context message so the agent knows it was paused/resumed
             messages.push({
@@ -256,7 +257,7 @@ export class AgentRunner {
 
         // Periodic prompt refresh (every 10 iterations)
         if (iterations % 10 === 0) {
-          const refreshed = await fetchProtocol(role, serverUrl);
+          const refreshed = await fetchProtocol(role, client);
           if (refreshed) {
             const newPrompt = generateSystemPrompt(refreshed, agentId);
             messages[0] = { role: 'system', content: newPrompt };
@@ -301,10 +302,10 @@ interface ControlStatusResponse {
   pauseReason?: string;
 }
 
-async function checkControlStatus(agentId: string, serverUrl: string): Promise<ControlStatusResponse> {
+async function checkControlStatus(client: AcpClient): Promise<ControlStatusResponse> {
   try {
-    const res = await fetch(`${serverUrl}/api/control/status?agentId=${encodeURIComponent(agentId)}`);
-    return (await res.json()) as ControlStatusResponse;
+    const res = await client.getControlStatus();
+    return res.ok ? res.data as ControlStatusResponse : { halted: false, paused: false };
   } catch {
     // If server doesn't support control endpoints, assume running
     return { halted: false, paused: false };
@@ -312,14 +313,13 @@ async function checkControlStatus(agentId: string, serverUrl: string): Promise<C
 }
 
 async function waitForResume(
-  agentId: string,
-  serverUrl: string,
+  client: AcpClient,
   log: (msg: string) => void,
   pollIntervalMs = 2000,
 ): Promise<string> {
   while (true) {
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-    const status = await checkControlStatus(agentId, serverUrl);
+    const status = await checkControlStatus(client);
     if (!status.paused) {
       return 'resumed';
     }

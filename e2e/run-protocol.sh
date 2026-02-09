@@ -53,7 +53,7 @@ cp "$SCRIPT_DIR/monolith.js" "$WORK_DIR/monolith.js"
 echo -e "  Starting Incubator with protocol spec on port $SERVER_PORT..."
 
 # Build first
-(cd "$PROJECT_DIR" && npm run build) > /dev/null 2>&1
+(cd "$PROJECT_DIR" && pnpm run build) > /dev/null 2>&1
 
 node "$PROJECT_DIR/dist/index.js" \
   --http \

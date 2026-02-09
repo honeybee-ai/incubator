@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { generateSystemPrompt, fetchProtocol } from './prompt.js';
+import type { AcpClient } from '@agentcoordinationprotocol/sdk';
+
+function mockClient(getProtocolResult: unknown): AcpClient {
+  return {
+    getProtocol: vi.fn().mockResolvedValue(getProtocolResult),
+  } as unknown as AcpClient;
+}
 
 const mockProtocolResponse = {
   protocol: { name: 'trading-floor', title: 'The Trading Floor — Resource Market' },
@@ -94,9 +101,10 @@ describe('fetchProtocol', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   it('fetches and returns protocol response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const client = mockClient({
       ok: true,
-      json: async () => ({
+      status: 200,
+      data: {
         loaded: true,
         spec: {
           name: 'test',
@@ -104,41 +112,46 @@ describe('fetchProtocol', () => {
           roles: { worker: { description: 'Does work' } },
           phases: { init: { description: 'Initialize' }, done: { description: 'Done', terminal: true } },
         },
-      }),
-    }));
+      },
+    });
 
-    const result = await fetchProtocol('worker', 'http://localhost:3100');
+    const result = await fetchProtocol('worker', client);
     expect(result).not.toBeNull();
     expect(result!.protocol.name).toBe('test');
     expect(result!.role.name).toBe('worker');
     expect(result!.phases.init.description).toBe('Initialize');
+    expect(client.getProtocol).toHaveBeenCalledWith('worker');
   });
 
-  it('returns null on network error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-    const result = await fetchProtocol('worker', 'http://localhost:3100');
+  it('returns null on SDK error', async () => {
+    const client = {
+      getProtocol: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+    } as unknown as AcpClient;
+    const result = await fetchProtocol('worker', client);
     expect(result).toBeNull();
   });
 
   it('returns null on non-200 response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
-    const result = await fetchProtocol('worker', 'http://localhost:3100');
+    const client = mockClient({ ok: false, status: 500, data: {} });
+    const result = await fetchProtocol('worker', client);
     expect(result).toBeNull();
   });
 
   it('returns null when no protocol loaded', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const client = mockClient({
       ok: true,
-      json: async () => ({ loaded: false }),
-    }));
-    const result = await fetchProtocol('worker', 'http://localhost:3100');
+      status: 200,
+      data: { loaded: false },
+    });
+    const result = await fetchProtocol('worker', client);
     expect(result).toBeNull();
   });
 
   it('defaults to first role when requested role not found', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const client = mockClient({
       ok: true,
-      json: async () => ({
+      status: 200,
+      data: {
         loaded: true,
         spec: {
           name: 'test',
@@ -146,18 +159,19 @@ describe('fetchProtocol', () => {
           roles: { admin: { description: 'Admin role' } },
           phases: { start: { description: 'Start' } },
         },
-      }),
-    }));
+      },
+    });
 
-    const result = await fetchProtocol('nonexistent', 'http://localhost:3100');
+    const result = await fetchProtocol('nonexistent', client);
     expect(result).not.toBeNull();
     expect(result!.role.name).toBe('admin');
   });
 
   it('passes through team from REST response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const client = mockClient({
       ok: true,
-      json: async () => ({
+      status: 200,
+      data: {
         loaded: true,
         spec: {
           name: 'test',
@@ -169,10 +183,10 @@ describe('fetchProtocol', () => {
           { agent: 'worker_1', role: 'worker' },
           { agent: 'worker_2', role: 'worker' },
         ],
-      }),
-    }));
+      },
+    });
 
-    const result = await fetchProtocol('worker', 'http://localhost:3100');
+    const result = await fetchProtocol('worker', client);
     expect(result).not.toBeNull();
     expect(result!.team).toHaveLength(2);
     expect(result!.team![0].agent).toBe('worker_1');
@@ -180,9 +194,10 @@ describe('fetchProtocol', () => {
   });
 
   it('passes through governance from REST response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const client = mockClient({
       ok: true,
-      json: async () => ({
+      status: 200,
+      data: {
         loaded: true,
         spec: {
           name: 'test',
@@ -194,10 +209,10 @@ describe('fetchProtocol', () => {
             quorum: { default: 2 },
           },
         },
-      }),
-    }));
+      },
+    });
 
-    const result = await fetchProtocol('worker', 'http://localhost:3100');
+    const result = await fetchProtocol('worker', client);
     expect(result).not.toBeNull();
     expect(result!.governance).toBeDefined();
     expect(result!.governance!.budget!.max_tokens).toBe(50000);

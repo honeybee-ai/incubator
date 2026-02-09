@@ -1,4 +1,5 @@
 import type { ToolDef, ToolCall } from './types.js';
+import type { AcpClient } from '@agentcoordinationprotocol/sdk';
 import { getToolCallArgs } from './providers.js';
 
 // ─── Tool definitions (OpenAI function-calling format) ──────────────
@@ -469,238 +470,110 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
-// ─── Tool executor (maps tool calls → REST API) ─────────────────────
+// ─── Tool executor (maps tool calls → ACP SDK) ──────────────────────
 
-interface ToolRoute {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  path: (args: Record<string, unknown>) => string;
-  body?: (args: Record<string, unknown>) => Record<string, unknown> | undefined;
-  query?: (args: Record<string, unknown>) => Record<string, string>;
+function callSdkMethod(name: string, args: Record<string, unknown>, client: AcpClient) {
+  switch (name) {
+    // State
+    case 'incubator_getState':
+      return client.getStateKey(args.key as string);
+    case 'incubator_setState':
+      return client.setState(args.key as string, args.value, args.category as string | undefined, args.ttlMs as number | undefined);
+    case 'incubator_queryState':
+      return client.queryState({ pattern: args.pattern as string | undefined, category: args.category as string | undefined });
+    case 'incubator_deleteState':
+      return client.deleteState(args.key as string);
+
+    // Claims
+    case 'incubator_claim':
+      return client.claim(args.resource as string, args.value as string | undefined, { ttlMs: args.ttlMs as number | undefined });
+    case 'incubator_releaseClaim':
+      return client.releaseClaim(args.resource as string);
+    case 'incubator_checkClaim':
+      return client.checkClaim(args.resource as string);
+    case 'incubator_listClaims':
+      return client.listClaims(args.pattern as string | undefined);
+
+    // Events
+    case 'incubator_publishEvent':
+      return client.publishEvent(args.type as string, args.data as Record<string, unknown>);
+    case 'incubator_getEvents':
+      return client.getEvents(args.since as number | undefined, { type: args.type as string | undefined });
+
+    // Discoveries
+    case 'incubator_publishDiscovery':
+      return client.publishDiscovery(args.topic as string, args.content as string, args.category as string | undefined);
+    case 'incubator_searchDiscoveries':
+      return client.searchDiscoveries({ query: args.query as string | undefined, category: args.category as string | undefined });
+
+    // Protocol
+    case 'incubator_getProtocol':
+      return client.getProtocol(args.role as string | undefined);
+
+    // Messages
+    case 'incubator_sendMessage':
+      return client.sendMessage(args.to as string, args.content as string, { replyTo: args.replyTo as string | undefined });
+    case 'incubator_getMessages':
+      return client.getMessages({ since: args.since as string | undefined });
+
+    // Roles
+    case 'incubator_requestRole':
+      return client.requestRole(args.role as string, { reason: args.reason as string | undefined });
+
+    // Help
+    case 'incubator_requestHelp':
+      return client.requestHelp(args.problem as string, args.needs_capability as string | undefined, args.urgency as string | undefined);
+    case 'incubator_claimHelp':
+      return client.claimHelp(args.requestId as string);
+
+    // Progress
+    case 'incubator_reportProgress':
+      return client.reportProgress(args.claim as string, args.progress as number, args.note as string | undefined);
+
+    // Conflicts
+    case 'incubator_flagConflict':
+      return client.flagConflict(args.discovery_a as string, args.discovery_b as string, args.reason as string);
+
+    // Reinforcement
+    case 'incubator_requestReinforcement':
+      return client.requestReinforcement(args.role as string, { count: args.count as number | undefined, reason: args.reason as string | undefined });
+
+    // Governance
+    case 'incubator_requestApproval':
+      return client.requestApproval(args.action as string, { detail: args.detail as string | undefined, files: args.files as string | undefined });
+    case 'incubator_escalate':
+      return client.escalate(args.reason as string, args.context as string | undefined);
+    case 'incubator_proposeAction':
+      return client.proposeAction(args.action as string, { detail: args.detail as string | undefined, requires_quorum: args.requires_quorum as number | undefined });
+    case 'incubator_endorseAction':
+      return client.endorseAction(args.proposalId as string);
+    case 'incubator_requestRollback':
+      return client.requestRollback(args.reason as string, args.scope as string | undefined);
+
+    // Control
+    case 'incubator_requestHalt':
+      return client.halt(args.reason as string | undefined, { status: args.status as string | undefined, target: args.target as string | undefined });
+    case 'incubator_requestPause':
+      return client.pause(args.reason as string | undefined, { target: args.target as string | undefined });
+    case 'incubator_resumeAgent':
+      return client.resume({ reason: args.reason as string | undefined, target: args.target as string | undefined });
+
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
 }
-
-const TOOL_ROUTES: Record<string, ToolRoute> = {
-  incubator_getState: {
-    method: 'GET',
-    path: (a) => `/api/state/${encodeURIComponent(a.key as string)}`,
-  },
-  incubator_setState: {
-    method: 'PUT',
-    path: (a) => `/api/state/${encodeURIComponent(a.key as string)}`,
-    body: (a) => ({ value: a.value, category: a.category, ttlMs: a.ttlMs }),
-  },
-  incubator_queryState: {
-    method: 'GET',
-    path: () => '/api/state',
-    query: (a) => {
-      const q: Record<string, string> = {};
-      if (a.pattern) q.pattern = a.pattern as string;
-      if (a.category) q.category = a.category as string;
-      return q;
-    },
-  },
-  incubator_deleteState: {
-    method: 'DELETE',
-    path: (a) => `/api/state/${encodeURIComponent(a.key as string)}`,
-  },
-  incubator_claim: {
-    method: 'POST',
-    path: () => '/api/claims',
-    body: (a) => ({ resource: a.resource, value: a.value, ttlMs: a.ttlMs }),
-  },
-  incubator_releaseClaim: {
-    method: 'DELETE',
-    path: (a) => `/api/claims/${encodeURIComponent(a.resource as string)}`,
-  },
-  incubator_checkClaim: {
-    method: 'GET',
-    path: (a) => `/api/claims/${encodeURIComponent(a.resource as string)}`,
-  },
-  incubator_listClaims: {
-    method: 'GET',
-    path: () => '/api/claims',
-    query: (a) => {
-      const q: Record<string, string> = {};
-      if (a.pattern) q.pattern = a.pattern as string;
-      return q;
-    },
-  },
-  incubator_publishEvent: {
-    method: 'POST',
-    path: () => '/api/events',
-    body: (a) => ({ type: a.type, data: a.data }),
-  },
-  incubator_getEvents: {
-    method: 'GET',
-    path: () => '/api/events',
-    query: (a) => {
-      const q: Record<string, string> = {};
-      if (a.since !== undefined) q.since = String(a.since);
-      if (a.type) q.type = a.type as string;
-      return q;
-    },
-  },
-  incubator_publishDiscovery: {
-    method: 'POST',
-    path: () => '/api/discoveries',
-    body: (a) => ({ topic: a.topic, content: a.content, category: a.category }),
-  },
-  incubator_searchDiscoveries: {
-    method: 'GET',
-    path: () => '/api/discoveries',
-    query: (a) => {
-      const q: Record<string, string> = {};
-      if (a.query) q.query = a.query as string;
-      if (a.category) q.category = a.category as string;
-      return q;
-    },
-  },
-  incubator_getProtocol: {
-    method: 'GET',
-    path: () => '/api/protocol',
-    query: (a) => {
-      const q: Record<string, string> = {};
-      if (a.role) q.role = a.role as string;
-      return q;
-    },
-  },
-
-  // Messages
-  incubator_sendMessage: {
-    method: 'POST',
-    path: () => '/api/messages',
-    body: (a) => ({ to: a.to, content: a.content, replyTo: a.replyTo }),
-  },
-  incubator_getMessages: {
-    method: 'GET',
-    path: () => '/api/messages',
-    query: (a) => {
-      const q: Record<string, string> = {};
-      if (a.since) q.since = a.since as string;
-      return q;
-    },
-  },
-
-  // Roles
-  incubator_requestRole: {
-    method: 'POST',
-    path: () => '/api/roles/request',
-    body: (a) => ({ role: a.role, reason: a.reason }),
-  },
-
-  // Help
-  incubator_requestHelp: {
-    method: 'POST',
-    path: () => '/api/help',
-    body: (a) => ({ problem: a.problem, needs_capability: a.needs_capability, urgency: a.urgency }),
-  },
-  incubator_claimHelp: {
-    method: 'POST',
-    path: (a) => `/api/help/${encodeURIComponent(a.requestId as string)}/claim`,
-  },
-
-  // Progress
-  incubator_reportProgress: {
-    method: 'POST',
-    path: () => '/api/progress',
-    body: (a) => ({ claim: a.claim, progress: a.progress, note: a.note }),
-  },
-
-  // Conflicts
-  incubator_flagConflict: {
-    method: 'POST',
-    path: () => '/api/conflicts',
-    body: (a) => ({ discovery_a: a.discovery_a, discovery_b: a.discovery_b, reason: a.reason }),
-  },
-
-  // Reinforcement
-  incubator_requestReinforcement: {
-    method: 'POST',
-    path: () => '/api/reinforcements',
-    body: (a) => ({ role: a.role, count: a.count, reason: a.reason }),
-  },
-
-  // Governance
-  incubator_requestApproval: {
-    method: 'POST',
-    path: () => '/api/governance/approve',
-    body: (a) => ({ action: a.action, detail: a.detail, files: a.files }),
-  },
-  incubator_escalate: {
-    method: 'POST',
-    path: () => '/api/governance/escalate',
-    body: (a) => ({ reason: a.reason, context: a.context }),
-  },
-  incubator_proposeAction: {
-    method: 'POST',
-    path: () => '/api/governance/propose',
-    body: (a) => ({ action: a.action, detail: a.detail, requires_quorum: a.requires_quorum }),
-  },
-  incubator_endorseAction: {
-    method: 'POST',
-    path: (a) => `/api/governance/endorse/${encodeURIComponent(a.proposalId as string)}`,
-  },
-  incubator_requestRollback: {
-    method: 'POST',
-    path: () => '/api/governance/rollback',
-    body: (a) => ({ reason: a.reason, scope: a.scope }),
-  },
-
-  // Control
-  incubator_requestHalt: {
-    method: 'POST',
-    path: () => '/api/control/halt',
-    body: (a) => ({ reason: a.reason, status: a.status, target: a.target }),
-  },
-  incubator_requestPause: {
-    method: 'POST',
-    path: () => '/api/control/pause',
-    body: (a) => ({ reason: a.reason, target: a.target }),
-  },
-  incubator_resumeAgent: {
-    method: 'POST',
-    path: () => '/api/control/resume',
-    body: (a) => ({ reason: a.reason, target: a.target }),
-  },
-};
 
 export async function executeToolCall(
   toolCall: ToolCall,
-  agentId: string,
-  serverUrl: string,
+  client: AcpClient,
 ): Promise<string> {
   const name = toolCall.function.name;
   const args = getToolCallArgs(toolCall);
-  const route = TOOL_ROUTES[name];
-
-  if (!route) {
-    return JSON.stringify({ error: `Unknown tool: ${name}` });
-  }
-
-  let url = `${serverUrl}${route.path(args)}`;
-
-  // Append query parameters
-  if (route.query) {
-    const params = route.query(args);
-    const qs = new URLSearchParams(params).toString();
-    if (qs) url += `?${qs}`;
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Agent-Id': agentId,
-  };
-
-  const init: RequestInit = { method: route.method, headers };
-
-  if (route.body && (route.method === 'POST' || route.method === 'PUT')) {
-    init.body = JSON.stringify(route.body(args));
-  }
 
   try {
-    const res = await fetch(url, init);
-    const data = await res.text();
-    return data;
+    const response = await callSdkMethod(name, args, client);
+    return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
   } catch (err) {
-    return JSON.stringify({ error: `REST call failed: ${(err as Error).message}` });
+    return JSON.stringify({ error: `SDK call failed: ${(err as Error).message}` });
   }
 }
