@@ -202,6 +202,7 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
     proposals: stores.proposals,
     reinforcements: stores.reinforcements,
     control: stores.control,
+    runs: stores.runs,
   };
 }
 

@@ -12,6 +12,7 @@ import { RoleStore } from './stores/roles.js';
 import { ProposalStore } from './stores/proposals.js';
 import { ReinforcementStore } from './stores/reinforcements.js';
 import { ControlStore } from './stores/control.js';
+import { RunStore } from './stores/runs.js';
 import type { Stores } from './stores/interfaces.js';
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
 import { resolveVariables, renderInstructions, getRulesForRolePhase, normalizeRules } from '@agentcoordinationprotocol/spec';
@@ -42,7 +43,8 @@ export function createStores(): Stores {
   const proposals = new ProposalStore(events);
   const reinforcements = new ReinforcementStore(events);
   const control = new ControlStore(events);
-  return { events, state, claims, discoveries, messages, help, progress, conflicts, roles, proposals, reinforcements, control };
+  const runs = new RunStore();
+  return { events, state, claims, discoveries, messages, help, progress, conflicts, roles, proposals, reinforcements, control, runs };
 }
 
 export function createServer(stores: Stores, options: ServerOptions = {}) {

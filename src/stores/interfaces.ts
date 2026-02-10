@@ -84,6 +84,27 @@ export interface IReinforcementStore {
   list(): Promise<ReinforcementRequest[]>;
 }
 
+export interface AgentRun {
+  agentId: string;
+  role: string;
+  status: 'running' | 'completed' | 'error' | 'halted';
+  startedAt: string;
+  completedAt?: string;
+  elapsed?: number;
+  iterations?: number;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  summary?: string;
+  error?: string;
+}
+
+export interface IRunStore {
+  start(agentId: string, role: string): Promise<AgentRun>;
+  complete(agentId: string, data: Partial<AgentRun>): Promise<AgentRun | null>;
+  get(agentId: string): Promise<AgentRun | null>;
+  list(status?: string): Promise<AgentRun[]>;
+  summary(): Promise<{ agents: number; completed: number; errors: number; totalTokens: number; totalDuration: number }>;
+}
+
 export interface Stores {
   state: IStateStore;
   events: IEventStore;
@@ -97,4 +118,5 @@ export interface Stores {
   proposals: IProposalStore;
   reinforcements: IReinforcementStore;
   control: ControlStore;
+  runs: IRunStore;
 }

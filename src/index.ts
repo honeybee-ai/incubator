@@ -11,8 +11,6 @@ import { NamespaceRegistry } from './namespaces.js';
 import { saveAllSnapshots, loadAllSnapshots } from './persistence.js';
 import { LocalBus, RedisBus } from './bus.js';
 import { loadSpecFile } from '@agentcoordinationprotocol/spec';
-import { resolveProvider } from './agent/providers.js';
-import { AgentRunner, preflight } from './agent/runner.js';
 import type { NotificationBus } from './bus.js';
 import type { WsManager } from './ws.js';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +21,8 @@ import type { Redis } from './stores/redis/db.js';
 import { IntegrationManager, loadIntegrationsConfig } from './integrations/index.js';
 import type { TopicRouterOptions } from './honeycomb.js';
 import type { HoneycombTransport } from './transports/types.js';
+import { RunWatcher } from './run-watcher.js';
+import { BroodOrchestrator, type AgentsConfig } from './orchestrator.js';
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {};
@@ -75,16 +75,19 @@ async function main() {
   const backendConfig: BackendConfig = { type: backendType, dbPath, redisClient };
   const skipPersistence = isSqlite || isRedis;
 
-  // Agent spawning
-  const spawn = args['spawn'] === true;
-  const providerShorthand = typeof args['provider'] === 'string' ? args['provider'] : 'ollama/qwen3:8b';
-  const maxIterations = typeof args['max-iterations'] === 'string' ? parseInt(args['max-iterations'], 10) : 50;
-  const spawnRoles = typeof args['spawn-roles'] === 'string'
-    ? args['spawn-roles'].split(',').map(r => r.trim()).filter(Boolean)
-    : undefined;
-
   // Protocol loading
   const protocolPath = typeof args['protocol'] === 'string' ? args['protocol'] : undefined;
+
+  // Agent orchestration (delegated from CLI's `wgl up`)
+  let agentsConfig: AgentsConfig | undefined;
+  if (typeof args['agents'] === 'string') {
+    try {
+      agentsConfig = JSON.parse(args['agents']) as AgentsConfig;
+    } catch (err) {
+      console.error(`[incubator] Failed to parse --agents JSON: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  }
 
   // Integration loading (--integration=name or reads from config file)
   const cliIntegrations: string[] = [];
@@ -174,6 +177,11 @@ async function main() {
       routerOptions = { transport, hiveName, hivePublishes, hiveSubscribes };
     }
     registry.setBus(bus, routerOptions);
+
+    // Watch for agent lifecycle events → populate RunStore
+    const defaultStoresForWatcher = registry.get('default');
+    const runWatcher = new RunWatcher(bus, defaultStoresForWatcher.runs);
+    runWatcher.start();
 
     // Try to load sirv for dashboard serving (optional)
     let serveDashboard: ((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: () => void) => void) | undefined;
@@ -330,53 +338,26 @@ async function main() {
         console.error(`[incubator] Persistence: ${persistPath}`);
       }
 
-      // Spawn agents if requested
-      if (spawn) {
-        spawnAgents(port).catch(err => {
-          console.error(`[agent] Fatal: ${(err as Error).message}`);
+      // Orchestrator mode: spawn propolis + drones (delegated from CLI)
+      if (agentsConfig) {
+        orchestrator = new BroodOrchestrator(
+          agentsConfig, port, bus,
+          defaultStoresForWatcher.runs, verbose,
+        );
+        orchestrator.start().catch(err => {
+          console.error(`[orchestrator] Fatal: ${(err as Error).message}`);
           process.exit(1);
         });
       }
     });
 
-    // Agent spawning helper
-    let agentRunner: AgentRunner | undefined;
-
-    async function spawnAgents(serverPort: number) {
-      if (!protocolPath) {
-        console.error('[agent] --spawn requires --protocol=<path>');
-        process.exit(1);
-      }
-
-      const provider = resolveProvider(providerShorthand);
-      await preflight(provider, verbose);
-
-      agentRunner = new AgentRunner({
-        defaultProvider: provider,
-        serverUrl: `http://localhost:${serverPort}`,
-        maxIterations,
-        verbose,
-        spawnRoles,
-      });
-
-      console.error(`[agent] Provider: ${provider.type}/${provider.model}`);
-      console.error(`[agent] Max iterations: ${maxIterations}`);
-
-      const results = await agentRunner.spawnFromProtocol(protocolPath);
-
-      console.error('\n[agent] ═══ Results ═══');
-      for (const r of results) {
-        const status = r.status === 'completed' ? '✓' : '✗';
-        const detail = r.error ? ` (${r.error})` : '';
-        console.error(`[agent] ${status} ${r.agentId} (${r.role}): ${r.iterations} iterations${detail}`);
-      }
-      console.error('[agent] All agents finished');
-    }
+    let orchestrator: BroodOrchestrator | undefined;
 
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.error('\n[incubator] Shutting down...');
-      if (agentRunner) agentRunner.stop();
+      if (orchestrator) await orchestrator.shutdown();
+      runWatcher.stop();
       if (integrationManager) await integrationManager.stopAll();
       if (wsManager) wsManager.close();
       await bus.close();

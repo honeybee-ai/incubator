@@ -12,6 +12,7 @@ import { RoleStore } from '../roles.js';
 import { ProposalStore } from '../proposals.js';
 import { ReinforcementStore } from '../reinforcements.js';
 import { ControlStore } from '../control.js';
+import { RunStore } from '../runs.js';
 
 export function createSqliteStores(dbPath: string, namespace: string): Stores {
   const db = getDatabase(dbPath);
@@ -28,5 +29,6 @@ export function createSqliteStores(dbPath: string, namespace: string): Stores {
   const proposals = new ProposalStore(events);
   const reinforcements = new ReinforcementStore(events);
   const control = new ControlStore(events);
-  return { state, events, claims, discoveries, messages, help, progress, conflicts, roles, proposals, reinforcements, control };
+  const runs = new RunStore();
+  return { state, events, claims, discoveries, messages, help, progress, conflicts, roles, proposals, reinforcements, control, runs };
 }

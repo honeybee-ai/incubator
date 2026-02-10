@@ -66,7 +66,7 @@ async function parseBody(req: IncomingMessage): Promise<Record<string, unknown>>
 const RESOURCE_KEYWORDS = new Set([
   'state', 'claims', 'events', 'discoveries', 'health', 'protocol',
   'messages', 'help', 'progress', 'conflicts', 'roles', 'reinforcements', 'governance',
-  'control', 'topics',
+  'control', 'topics', 'runs',
 ]);
 
 const routes: Route[] = [
@@ -620,6 +620,39 @@ const routes: Route[] = [
       const agentId = url.searchParams.get('agentId') ?? req.headers['x-agent-id'] as string ?? undefined;
       const status = stores.control.getStatus(agentId);
       json(res, 200, status);
+    },
+  },
+
+  // ─── Runs ──────────────────────────────────────────────────
+  {
+    method: 'GET',
+    pattern: /^\/api\/runs\/summary$/,
+    handler: async (_req, res, stores) => {
+      const summary = await stores.runs.summary();
+      json(res, 200, summary);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/runs\/([^/]+)$/,
+    handler: async (_req, res, stores, match) => {
+      const agentId = decodeURIComponent(match[1]);
+      const run = await stores.runs.get(agentId);
+      if (!run) {
+        json(res, 200, { found: false, agentId });
+        return;
+      }
+      json(res, 200, { found: true, run });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/runs$/,
+    handler: async (req, res, stores) => {
+      const url = new URL(req.url!, 'http://localhost');
+      const status = url.searchParams.get('status') ?? undefined;
+      const runs = await stores.runs.list(status);
+      json(res, 200, { count: runs.length, runs });
     },
   },
 ];
