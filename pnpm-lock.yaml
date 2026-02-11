@@ -12,8 +12,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@agentcoordinationprotocol/spec':
-        specifier: ^0.2.1
-        version: 0.2.1
+        specifier: ^0.2.2
+        version: 0.2.2
       '@honeybee-ai/carapace':
         specifier: ^1.0.1
         version: 1.0.1
@@ -23,6 +23,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.26.0(zod@3.25.76)
+      js-yaml:
+        specifier: ^4.1.1
+        version: 4.1.1
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -30,6 +33,9 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/node':
         specifier: ^22.13.1
         version: 22.19.10
@@ -62,8 +68,8 @@ packages:
     resolution: {integrity: sha512-NzBEee/St0NdorieiwSTJu64dlR3XS+b5Ng/fGtS3Jo1Y6HOHDUB8ej5ZqC8YmW4uPXPlOYLt6hvS9BvhHm3rA==}
     engines: {node: '>=20'}
 
-  '@agentcoordinationprotocol/spec@0.2.1':
-    resolution: {integrity: sha512-OYiZNNf7d3LMzzd2eBEBjCkej5HWpaCyBDfJ8CbrYmYOseGkbvUVdI4ljb4V5uPiOhHTb6vI1rrTiOyHu5qQJA==}
+  '@agentcoordinationprotocol/spec@0.2.2':
+    resolution: {integrity: sha512-TgIP6SH22UgOXR5hisawDA1UyXqHF6EDORWLzG24qgnxtTxxmloZ+CweJuNxKgQrix5NTSGqLf361espfNtUiQ==}
 
   '@esbuild/aix-ppc64@0.27.3':
     resolution: {integrity: sha512-9fJMTNFTWZMh5qwrBItuziu834eOCUcEqymSH7pY+zoMVEZg3gcPuBNxH1EvfVYe9h0x/Ptw8KBzv7qxb7l8dg==}
@@ -391,6 +397,9 @@ packages:
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
+
+  '@types/js-yaml@4.0.9':
+    resolution: {integrity: sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg==}
 
   '@types/node@22.19.10':
     resolution: {integrity: sha512-tF5VOugLS/EuDlTBijk0MqABfP8UxgYazTLo3uIn3b4yJgg26QRbVYJYsDtHrjdDUIRfP70+VfhTTc+CE1yskw==}
@@ -1171,7 +1180,7 @@ snapshots:
 
   '@agentcoordinationprotocol/sdk@0.1.0': {}
 
-  '@agentcoordinationprotocol/spec@0.2.1':
+  '@agentcoordinationprotocol/spec@0.2.2':
     optionalDependencies:
       js-yaml: 4.1.1
 
@@ -1381,6 +1390,8 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
+  '@types/js-yaml@4.0.9': {}
+
   '@types/node@22.19.10':
     dependencies:
       undici-types: 6.21.0
@@ -1447,8 +1458,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  argparse@2.0.1:
-    optional: true
+  argparse@2.0.1: {}
 
   assertion-error@2.0.1: {}
 
@@ -1790,7 +1800,6 @@ snapshots:
   js-yaml@4.1.1:
     dependencies:
       argparse: 2.0.1
-    optional: true
 
   json-schema-traverse@1.0.0: {}
 

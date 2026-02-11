@@ -1,6 +1,6 @@
 {
   "name": "@honeybee-ai/incubator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Give your agent swarm shared memory. MCP server + REST API for multi-agent coordination.",
   "type": "module",
   "main": "dist/index.js",
@@ -49,21 +49,26 @@
   },
   "dependencies": {
     "@agentcoordinationprotocol/sdk": "^0.1.0",
-    "@agentcoordinationprotocol/spec": "^0.2.1",
+    "@agentcoordinationprotocol/spec": "^0.2.2",
+    "@honeybee-ai/carapace": "^1.0.1",
     "@honeybee-ai/hivemind-sdk": "^0.2.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@honeybee-ai/carapace": "^1.0.1",
+    "js-yaml": "^4.1.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.13.1",
     "@types/ws": "^8.5.14",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   },
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2",
