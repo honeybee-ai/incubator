@@ -1,51 +1,90 @@
 import type { ProviderConfig, ChatMessage, ToolCall, ToolDef, CompletionResult, TokenUsage } from './types.js';
 
-// ─── Provider resolution ────────────────────────────────────────────
+// ─── Provider Catalog ────────────────────────────────────────────────
+// Duplicated across Colony, incubator, and CLI. Keep in sync manually.
+// 4-5 providers that rarely change — not worth a shared module.
 
-const DEFAULT_URLS: Record<string, string> = {
-  ollama: 'http://localhost:11434',
-  openai: 'https://api.openai.com',
-  anthropic: 'https://api.anthropic.com',
-  groq: 'https://api.groq.com/openai',
-  cerebras: 'https://api.cerebras.ai',
+export interface ProviderEntry {
+  tier: 'fast' | 'smart' | 'local';
+  baseUrl: string;
+  format: 'openai' | 'anthropic' | 'ollama';
+  defaultModel: string;
+  envVar: string;
+  cost: { prompt: number; completion: number };  // $ per million tokens
+}
+
+export const PROVIDER_CATALOG: Record<string, ProviderEntry> = {
+  cerebras:  { tier: 'fast',  baseUrl: 'https://api.cerebras.ai',       format: 'openai',    defaultModel: 'llama-3.3-70b',             envVar: 'CEREBRAS_API_KEY',  cost: { prompt: 0.10, completion: 0.10 } },
+  groq:      { tier: 'fast',  baseUrl: 'https://api.groq.com/openai',   format: 'openai',    defaultModel: 'llama-3.3-70b-versatile',   envVar: 'GROQ_API_KEY',      cost: { prompt: 0.27, completion: 0.27 } },
+  openai:    { tier: 'smart', baseUrl: 'https://api.openai.com',        format: 'openai',    defaultModel: 'gpt-4o-mini',               envVar: 'OPENAI_API_KEY',    cost: { prompt: 2.50, completion: 10.00 } },
+  anthropic: { tier: 'smart', baseUrl: 'https://api.anthropic.com',     format: 'anthropic', defaultModel: 'claude-sonnet-4-5-20250929', envVar: 'ANTHROPIC_API_KEY', cost: { prompt: 3.00, completion: 15.00 } },
+  ollama:    { tier: 'local', baseUrl: 'http://localhost:11434',         format: 'ollama',    defaultModel: 'qwen3:32b',                 envVar: 'OLLAMA_HOST',       cost: { prompt: 0, completion: 0 } },
 };
 
+const PROVIDER_ALIASES: Record<string, string> = {
+  fast: 'cerebras',
+  smart: 'openai',
+  local: 'ollama',
+};
+
+// ─── Provider resolution ────────────────────────────────────────────
+
 export function resolveProvider(shorthand: string): ProviderConfig {
-  const slash = shorthand.indexOf('/');
+  // Resolve aliases: "fast" → "cerebras", "smart" → "openai", "local" → "ollama"
+  let resolved = shorthand;
+  if (PROVIDER_ALIASES[resolved]) {
+    resolved = PROVIDER_ALIASES[resolved];
+  }
+
+  const slash = resolved.indexOf('/');
+  let rawName: string;
+  let model: string;
+
   if (slash === -1) {
-    throw new Error(
-      `Invalid provider shorthand "${shorthand}". Use format: provider/model (e.g. ollama/qwen3:32b, openai/gpt-4o, anthropic/claude-sonnet-4-5-20250929)`
-    );
+    // Provider-only: "cerebras" → "cerebras/llama-3.3-70b"
+    rawName = resolved;
+    const catalog = PROVIDER_CATALOG[rawName];
+    if (!catalog) {
+      throw new Error(
+        `Unknown provider "${rawName}". Known: ${Object.keys(PROVIDER_CATALOG).join(', ')}. Aliases: ${Object.keys(PROVIDER_ALIASES).join(', ')}.`
+      );
+    }
+    model = catalog.defaultModel;
+  } else {
+    rawName = resolved.slice(0, slash);
+    // Resolve alias in provider part too: "fast/custom-model"
+    if (PROVIDER_ALIASES[rawName]) {
+      rawName = PROVIDER_ALIASES[rawName];
+    }
+    model = resolved.slice(slash + 1);
+    if (!model) {
+      const catalog = PROVIDER_CATALOG[rawName];
+      model = catalog?.defaultModel || 'llama-3.3-70b';
+    }
   }
-  const providerName = shorthand.slice(0, slash);
-  const model = shorthand.slice(slash + 1);
-  if (!model) {
-    throw new Error(`Missing model in provider shorthand "${shorthand}"`);
-  }
+
+  const providerName = rawName;
+  const catalog = PROVIDER_CATALOG[providerName];
 
   const type = providerName === 'ollama' ? 'ollama'
     : providerName === 'anthropic' ? 'anthropic'
-    : 'openai'; // groq, together, fireworks, etc. are all OpenAI-compatible
+    : 'openai'; // groq, cerebras, together, fireworks, etc. are all OpenAI-compatible
 
   // Support OLLAMA_HOST env var
-  let baseUrl = DEFAULT_URLS[providerName] ?? DEFAULT_URLS.openai;
+  let baseUrl = catalog?.baseUrl ?? PROVIDER_CATALOG.openai.baseUrl;
   if (type === 'ollama' && process.env.OLLAMA_HOST) {
     const host = process.env.OLLAMA_HOST;
     baseUrl = host.startsWith('http') ? host : `http://${host}`;
   }
 
+  // API key from env var (catalog knows the var name)
+  const envVar = catalog?.envVar;
   let apiKey: string | undefined;
-  if (providerName === 'cerebras') {
-    apiKey = process.env.CEREBRAS_API_KEY;
-  } else if (providerName === 'groq') {
-    apiKey = process.env.GROQ_API_KEY;
-  } else if (type === 'openai') {
-    apiKey = process.env.OPENAI_API_KEY;
-  } else if (type === 'anthropic') {
-    apiKey = process.env.ANTHROPIC_API_KEY;
+  if (envVar && process.env[envVar]) {
+    apiKey = process.env[envVar];
   }
 
-  return { type, baseUrl, apiKey, model };
+  return { type, baseUrl, apiKey, model, providerName };
 }
 
 // ─── Connection checks ──────────────────────────────────────────────
@@ -92,6 +131,44 @@ export async function checkModel(provider: ProviderConfig): Promise<boolean> {
   return true;
 }
 
+// ─── Provider SDK clients (lazy-initialized, cached per API key) ──────
+
+const _sdkModules: Record<string, any> = {};
+const _sdkClientCache = new Map<string, any>();
+
+async function getCerebrasClient(apiKey: string) {
+  const key = `cerebras:${apiKey}`;
+  if (!_sdkClientCache.has(key)) {
+    if (!_sdkModules.cerebras) {
+      _sdkModules.cerebras = (await import('@cerebras/cerebras_cloud_sdk')).default;
+    }
+    _sdkClientCache.set(key, new _sdkModules.cerebras({ apiKey }));
+  }
+  return _sdkClientCache.get(key);
+}
+
+async function getGroqClient(apiKey: string) {
+  const key = `groq:${apiKey}`;
+  if (!_sdkClientCache.has(key)) {
+    if (!_sdkModules.groq) {
+      _sdkModules.groq = (await import('groq-sdk')).default;
+    }
+    _sdkClientCache.set(key, new _sdkModules.groq({ apiKey }));
+  }
+  return _sdkClientCache.get(key);
+}
+
+async function getAnthropicClient(apiKey: string) {
+  const key = `anthropic:${apiKey}`;
+  if (!_sdkClientCache.has(key)) {
+    if (!_sdkModules.anthropic) {
+      _sdkModules.anthropic = (await import('@anthropic-ai/sdk')).default;
+    }
+    _sdkClientCache.set(key, new _sdkModules.anthropic({ apiKey }));
+  }
+  return _sdkClientCache.get(key);
+}
+
 // ─── Chat completion ────────────────────────────────────────────────
 
 const MAX_RETRIES = 5;
@@ -117,11 +194,22 @@ export async function chatCompletion(
   const opts: CompletionOptions = { temperature, ...options };
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
+      // Route to native SDKs when available, fall back to raw fetch
       if (provider.type === 'anthropic') {
+        if (provider.apiKey) {
+          return await anthropicSdkCompletion(provider, messages, tools, opts.temperature);
+        }
         return await anthropicCompletion(provider, messages, tools, opts.temperature);
       }
       if (provider.type === 'ollama') {
         return await ollamaCompletion(provider, messages, tools, opts.temperature);
+      }
+      // Cerebras and Groq get native SDK handling
+      if (provider.providerName === 'cerebras' && provider.apiKey) {
+        return await cerebrasSdkCompletion(provider, messages, tools, opts.temperature);
+      }
+      if (provider.providerName === 'groq' && provider.apiKey) {
+        return await groqSdkCompletion(provider, messages, tools, opts.temperature);
       }
       return await openaiCompletion(provider, messages, tools, opts.temperature, opts.disableReasoning, opts);
     } catch (err) {
@@ -467,6 +555,196 @@ async function anthropicCompletion(
   };
 
   return { message, usage };
+}
+
+// ─── SDK-based completions (Cerebras, Groq, Anthropic) ──────────────
+
+async function cerebrasSdkCompletion(
+  provider: ProviderConfig,
+  messages: ChatMessage[],
+  tools: ToolDef[],
+  temperature?: number,
+): Promise<CompletionResult> {
+  const client = await getCerebrasClient(provider.apiKey!);
+  const body: Record<string, unknown> = {
+    model: provider.model,
+    messages: messages.map(m => {
+      const msg: Record<string, unknown> = { role: m.role };
+      if (m.content !== undefined) msg.content = m.content;
+      if (m.tool_calls) msg.tool_calls = m.tool_calls.map(tc => ({
+        id: tc.id, type: 'function',
+        function: { name: tc.function.name, arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments) },
+      }));
+      if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+      return msg;
+    }),
+  };
+  if (tools.length > 0) { body.tools = tools; body.parallel_tool_calls = true; }
+  if (temperature !== undefined) body.temperature = temperature;
+
+  const response = await client.chat.completions.create(body);
+  const choice = response.choices?.[0]?.message;
+  if (!choice) throw new Error('Cerebras SDK returned no choices');
+
+  let content = choice.content ?? null;
+  if (content) content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() || null;
+
+  const message: ChatMessage = { role: 'assistant', content };
+  if (choice.tool_calls && choice.tool_calls.length > 0) {
+    message.tool_calls = choice.tool_calls.map((tc: any) => ({
+      id: tc.id, type: 'function' as const,
+      function: { name: tc.function.name, arguments: parseArguments(tc.function.arguments) },
+    }));
+  } else if (message.content && tools.length > 0) {
+    const extracted = extractToolCallsFromText(message.content, tools);
+    if (extracted.length > 0) { message.tool_calls = extracted; message.content = null; }
+  }
+
+  return {
+    message,
+    usage: {
+      promptTokens: response.usage?.prompt_tokens ?? 0,
+      completionTokens: response.usage?.completion_tokens ?? 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+async function groqSdkCompletion(
+  provider: ProviderConfig,
+  messages: ChatMessage[],
+  tools: ToolDef[],
+  temperature?: number,
+): Promise<CompletionResult> {
+  const client = await getGroqClient(provider.apiKey!);
+  const body: Record<string, unknown> = {
+    model: provider.model,
+    messages: messages.map(m => {
+      const msg: Record<string, unknown> = { role: m.role };
+      if (m.content !== undefined) msg.content = m.content;
+      if (m.tool_calls) msg.tool_calls = m.tool_calls.map(tc => ({
+        id: tc.id, type: 'function',
+        function: { name: tc.function.name, arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments) },
+      }));
+      if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+      return msg;
+    }),
+  };
+  if (tools.length > 0) { body.tools = tools; body.parallel_tool_calls = true; }
+  if (temperature !== undefined) body.temperature = temperature;
+
+  const response = await client.chat.completions.create(body);
+  const choice = response.choices?.[0]?.message;
+  if (!choice) throw new Error('Groq SDK returned no choices');
+
+  let content = choice.content ?? null;
+  if (content) content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() || null;
+
+  const message: ChatMessage = { role: 'assistant', content };
+  if (choice.tool_calls && choice.tool_calls.length > 0) {
+    message.tool_calls = choice.tool_calls.map((tc: any) => ({
+      id: tc.id, type: 'function' as const,
+      function: { name: tc.function.name, arguments: parseArguments(tc.function.arguments) },
+    }));
+  } else if (message.content && tools.length > 0) {
+    const extracted = extractToolCallsFromText(message.content, tools);
+    if (extracted.length > 0) { message.tool_calls = extracted; message.content = null; }
+  }
+
+  return {
+    message,
+    usage: {
+      promptTokens: response.usage?.prompt_tokens ?? 0,
+      completionTokens: response.usage?.completion_tokens ?? 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+async function anthropicSdkCompletion(
+  provider: ProviderConfig,
+  messages: ChatMessage[],
+  tools: ToolDef[],
+  temperature?: number,
+): Promise<CompletionResult> {
+  const client = await getAnthropicClient(provider.apiKey!);
+
+  // Extract system message
+  let system: string | undefined;
+  const anthropicMessages: Array<{ role: string; content: any }> = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'system') { system = msg.content ?? undefined; continue; }
+    if (msg.role === 'assistant') {
+      const content: any[] = [];
+      if (msg.content) content.push({ type: 'text', text: msg.content });
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          content.push({
+            type: 'tool_use', id: tc.id ?? `call_${Date.now()}`, name: tc.function.name,
+            input: typeof tc.function.arguments === 'string' ? parseArguments(tc.function.arguments) : tc.function.arguments,
+          });
+        }
+      }
+      anthropicMessages.push({ role: 'assistant', content });
+      continue;
+    }
+    if (msg.role === 'tool') {
+      const toolResult = { type: 'tool_result' as const, tool_use_id: msg.tool_call_id ?? '', content: msg.content ?? '' };
+      const last = anthropicMessages[anthropicMessages.length - 1];
+      if (last?.role === 'user' && Array.isArray(last.content)) {
+        last.content.push(toolResult);
+      } else {
+        anthropicMessages.push({ role: 'user', content: [toolResult] });
+      }
+      continue;
+    }
+    anthropicMessages.push({ role: 'user', content: msg.content ?? '' });
+  }
+
+  const anthropicTools = tools.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }));
+
+  const params: Record<string, unknown> = {
+    model: provider.model,
+    max_tokens: 4096,
+    messages: anthropicMessages,
+  };
+  if (system) params.system = system;
+  if (anthropicTools.length > 0) params.tools = anthropicTools;
+  if (temperature !== undefined) params.temperature = temperature;
+
+  const response = await client.messages.create(params);
+
+  const chatMsg: ChatMessage = { role: 'assistant', content: null };
+  const textParts: string[] = [];
+  const toolCalls: ToolCall[] = [];
+
+  for (const block of response.content) {
+    if (block.type === 'text') {
+      textParts.push(block.text);
+    } else if (block.type === 'tool_use') {
+      toolCalls.push({
+        id: block.id, type: 'function',
+        function: { name: block.name, arguments: block.input as Record<string, unknown> },
+      });
+    }
+  }
+
+  if (textParts.length > 0) chatMsg.content = textParts.join('\n');
+  if (toolCalls.length > 0) chatMsg.tool_calls = toolCalls;
+
+  return {
+    message: chatMsg,
+    usage: {
+      promptTokens: response.usage?.input_tokens ?? 0,
+      completionTokens: response.usage?.output_tokens ?? 0,
+      totalTokens: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
+    },
+  };
 }
 
 // ─── Utilities ──────────────────────────────────────────────────────

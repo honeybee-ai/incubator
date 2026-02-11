@@ -13,6 +13,7 @@ export function useWebSocket() {
   const setWsStatus = useDashboardStore((s) => s.setWsStatus)
   const addEvents = useDashboardStore((s) => s.addEvents)
   const setEventCursor = useDashboardStore((s) => s.setEventCursor)
+  const setMetrics = useDashboardStore((s) => s.setMetrics)
 
   useEffect(() => {
     let closed = false
@@ -44,6 +45,9 @@ export function useWebSocket() {
               break
             case 'ping':
               // keepalive, no action
+              break
+            case 'metrics':
+              setMetrics(msg.data)
               break
             case 'error':
               console.warn('[dashboard] WS error:', msg.message)
@@ -81,5 +85,5 @@ export function useWebSocket() {
       }
       setWsStatus('disconnected')
     }
-  }, [ns, setWsStatus, addEvents, setEventCursor])
+  }, [ns, setWsStatus, addEvents, setEventCursor, setMetrics])
 }

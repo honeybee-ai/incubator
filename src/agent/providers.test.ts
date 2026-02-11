@@ -55,12 +55,16 @@ describe('resolveProvider', () => {
     expect(p.type).toBe('openai');
   });
 
-  it('throws on missing slash', () => {
-    expect(() => resolveProvider('ollama')).toThrow('Invalid provider shorthand');
+  it('resolves provider-only string with catalog default model', () => {
+    const p = resolveProvider('ollama');
+    expect(p.type).toBe('ollama');
+    expect(p.model).toBe('qwen3:32b');
   });
 
-  it('throws on missing model', () => {
-    expect(() => resolveProvider('ollama/')).toThrow('Missing model');
+  it('resolves trailing slash with catalog default model', () => {
+    const p = resolveProvider('ollama/');
+    expect(p.type).toBe('ollama');
+    expect(p.model).toBe('qwen3:32b');
   });
 
   it('respects OLLAMA_HOST env var', () => {

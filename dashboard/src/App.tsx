@@ -1,4 +1,4 @@
-import { FileCode, Database, Lock, Lightbulb, Users, Shield } from 'lucide-react'
+import { FileCode, Database, Lock, Lightbulb, Users, Shield, BarChart3 } from 'lucide-react'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { usePolling } from '@/hooks/usePolling'
@@ -10,6 +10,7 @@ import { ClaimsPanel } from '@/components/claims/ClaimsPanel'
 import { DiscoveriesPanel } from '@/components/discoveries/DiscoveriesPanel'
 import { TeamRoster } from '@/components/team/TeamRoster'
 import { GovernancePanel } from '@/components/governance/GovernancePanel'
+import { MetricsPanel } from '@/components/metrics/MetricsPanel'
 import { ActivityFeed } from '@/components/events/ActivityFeed'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'claims', label: 'Claims', icon: Lock },
   { id: 'discoveries', label: 'Discoveries', icon: Lightbulb },
   { id: 'governance', label: 'Governance', icon: Shield },
+  { id: 'metrics', label: 'Metrics', icon: BarChart3 },
 ] as const
 
 export function App() {
@@ -65,6 +67,7 @@ export function App() {
               {activeTab === 'claims' && <ClaimsPanel />}
               {activeTab === 'discoveries' && <DiscoveriesPanel />}
               {activeTab === 'governance' && <GovernancePanel />}
+              {activeTab === 'metrics' && <MetricsPanel />}
             </div>
 
             <ActivityFeed />

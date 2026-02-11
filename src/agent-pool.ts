@@ -113,10 +113,11 @@ export class AgentPool {
     return agentId;
   }
 
-  async killAgent(agentId: string): Promise<void> {
+  async killAgent(agentId: string, telemetry?: { record(type: string, meta: Record<string, unknown>): void }): Promise<void> {
     const agent = this.agents.get(agentId);
     if (!agent) return;
     agent.runner.stop();
+    telemetry?.record('agent_kill', { agentId, reason: 'pool_kill' });
     // Wait briefly for cleanup
     try {
       await Promise.race([agent.promise, new Promise(r => setTimeout(r, 5000))]);
@@ -124,7 +125,8 @@ export class AgentPool {
     this.agents.delete(agentId);
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(telemetry?: { record(type: string, meta: Record<string, unknown>): void }): Promise<void> {
+    telemetry?.record('pool_shutdown', { agentCount: this.agents.size });
     for (const agent of this.agents.values()) {
       agent.runner.stop();
     }

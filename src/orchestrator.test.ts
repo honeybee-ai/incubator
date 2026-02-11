@@ -25,6 +25,11 @@ vi.mock('node:crypto', () => ({
   randomBytes: vi.fn(() => Buffer.from('abc123', 'hex')),
 }));
 
+// Mock Agent SDK to force fallback to subprocess spawn
+vi.mock('@anthropic-ai/claude-agent-sdk', () => {
+  throw new Error('Mock: SDK not available');
+});
+
 // Mock AgentPool for in-process mode tests
 const mockPoolStartAgent = vi.fn(async (spec: { role: string }) => `${spec.role}_pool123`);
 const mockPoolKillAgent = vi.fn(async () => {});

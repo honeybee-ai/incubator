@@ -27,6 +27,7 @@ import { RunWatcher } from './run-watcher.js';
 import { BroodOrchestrator, type AgentsConfig } from './orchestrator.js';
 import { WebhookManager } from './webhooks.js';
 import { setLogFormat, setLogLevel, type LogFormat } from './log.js';
+import { createTelemetryFromEnv, type TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {};
@@ -131,13 +132,14 @@ export async function main() {
 
   const registry = new NamespaceRegistry(backendConfig);
   let sanitizeSnapshotFn: undefined | ((snapshot: import('./types.js').Snapshot) => void);
+  let carapaceGuard: import('./guard.js').Guard | undefined;
 
   if (noGuard) {
     console.error('[incubator] WARNING: Carapace disabled — no prompt injection scanning');
   } else {
-    const guard = loadGuard(verbose);
-    registry.setGuard(guard, verbose);
-    sanitizeSnapshotFn = (snapshot) => scanSnapshot(snapshot, guard, verbose);
+    carapaceGuard = loadGuard(verbose);
+    registry.setGuard(carapaceGuard, verbose);
+    sanitizeSnapshotFn = (snapshot) => scanSnapshot(snapshot, carapaceGuard!, verbose);
     console.error('[incubator] Carapace active — scanning writes, reads, and snapshots');
   }
 
@@ -493,7 +495,7 @@ export async function main() {
             env: broodEnv,
             agents: broodAgents,
           };
-          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module);
+          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module, telemetry);
           orch.start().catch(err => {
             console.error(`[orchestrator] Spawn failed: ${(err as Error).message}`);
           });
@@ -557,6 +559,27 @@ export async function main() {
       }
     }
 
+    // Create telemetry reporter (local-first, cloud opt-in via env vars)
+    let telemetry: TelemetryReporter | undefined;
+    try {
+      telemetry = createTelemetryFromEnv();
+      telemetry.start();
+      if (telemetry.localEnabled) {
+        console.error(`[incubator] Telemetry:    local JSONL${telemetry.cloudEnabled ? ' + cloud sync' : ''}`);
+      }
+      // Wire telemetry into guard (guard was set before telemetry was created)
+      if (carapaceGuard && telemetry) {
+        registry.setGuard(carapaceGuard, verbose, telemetry);
+        sanitizeSnapshotFn = (snapshot) => scanSnapshot(snapshot, carapaceGuard!, verbose, telemetry);
+      }
+      // Wire telemetry into dance support for WS metrics push
+      if (danceSupport && telemetry) {
+        danceSupport.telemetry = telemetry;
+      }
+    } catch {
+      // Non-fatal — telemetry must never break the host
+    }
+
     httpServer.listen(port, () => {
       console.error(`[incubator] ${useTls ? 'HTTPS' : 'HTTP'} server listening on port ${port}`);
       console.error(`[incubator] MCP endpoint: ${proto}://localhost:${port}/mcp`);
@@ -575,7 +598,7 @@ export async function main() {
         orchestrator = new BroodOrchestrator(
           agentsConfig, port, bus,
           defaultStoresForWatcher.runs, verbose,
-          defaultStoresForWatcher, registry, danceSupport?.module,
+          defaultStoresForWatcher, registry, danceSupport?.module, telemetry,
         );
         orchestrator.start().catch(err => {
           console.error(`[orchestrator] Fatal: ${(err as Error).message}`);
@@ -591,6 +614,7 @@ export async function main() {
       console.error('\n[incubator] Shutting down...');
       if (orchestrator) await orchestrator.shutdown();
       for (const orch of spawnedOrchestrators) await orch.shutdown();
+      if (telemetry) await telemetry.stop();
       runWatcher.stop();
       webhookManager.close();
       if (integrationManager) await integrationManager.stopAll();

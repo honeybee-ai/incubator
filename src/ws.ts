@@ -239,9 +239,20 @@ function handleConnection(
     send({ type: 'ping', ts: Date.now() });
   }, PING_INTERVAL);
 
+  // Metrics push (every 10s, if telemetry available)
+  const METRICS_INTERVAL = 10_000;
+  const metricsTimer = danceSupport?.telemetry ? setInterval(() => {
+    if (ws.readyState !== ws.OPEN) return;
+    const snapshot = danceSupport!.telemetry!.getSnapshot?.();
+    if (snapshot) {
+      send({ type: 'metrics', data: snapshot });
+    }
+  }, METRICS_INTERVAL) : null;
+
   // Cleanup on close/error
   const cleanup = () => {
     clearInterval(pingTimer);
+    if (metricsTimer) clearInterval(metricsTimer);
     unsubscribe();
     if (verbose) {
       console.error(`[incubator] WS client disconnected: ns=${namespace}`);

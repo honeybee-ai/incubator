@@ -197,7 +197,11 @@ export class BroodOrchestrator {
         if (agentType === 'claude') {
           const suffix = randomBytes(3).toString('hex');
           const agentId = `${agent.role}_${suffix}`;
-          this.spawnClaude(agent, agentId, config);
+          // Try Agent SDK first (programmatic), fall back to subprocess
+          const usedSdk = await this.startClaudeAgent(agent, agentId, config);
+          if (!usedSdk) {
+            this.spawnClaude(agent, agentId, config);
+          }
           continue;
         }
 
@@ -293,10 +297,13 @@ export class BroodOrchestrator {
           if (line) this.log(`[${agentId}] ${line}`);
         });
 
-        child.on('exit', (code) => {
+        child.on('exit', (code, signal) => {
           this.children.delete(`${agentType}:${agentId}`);
           const status = code === 0 ? 'completed' : `exited with code ${code}`;
           this.log(`[${agentId}] ${status}`);
+          this.telemetry?.record('agent_exit', {
+            agentId, role: agent.role, type: agentType, exitCode: code, signal,
+          });
         });
 
         if (child.pid) {
@@ -309,6 +316,81 @@ export class BroodOrchestrator {
         }
       }
     }
+  }
+
+  /**
+   * Start a Claude agent using the Agent SDK (programmatic, no subprocess).
+   * Returns true if SDK was available and agent was started, false to fall back.
+   */
+  private async startClaudeAgent(agent: AgentSpec, agentId: string, config: AgentsConfig): Promise<boolean> {
+    let queryFn: any;
+    try {
+      const sdk = await import('@anthropic-ai/claude-agent-sdk');
+      queryFn = sdk.query;
+    } catch {
+      // Agent SDK not installed — fall back to subprocess
+      return false;
+    }
+
+    const prompt = agent.prompt
+      ?? `You are assigned the role "${agent.role}" in an ACP coordination protocol. Use the acp MCP tool to coordinate with other agents. Follow the protocol instructions injected at session start.`;
+
+    const pluginDir = agent.pluginDir ?? PLUGIN_DIR;
+
+    // Model hint resolution
+    const modelHint =
+      (agent.modelHint && config.models?.[agent.modelHint])
+      ?? config.models?.[agent.role]
+      ?? agent.modelHint
+      ?? undefined;
+
+    const agentPromise = (async () => {
+      try {
+        for await (const message of queryFn({
+          prompt,
+          options: {
+            allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+            permissionMode: 'bypassPermissions',
+            maxTurns: 100,
+            cwd: config.worktree,
+            model: modelHint ?? undefined,
+            env: {
+              INCUBATOR_URL: `${config.tls ? 'https' : 'http'}://localhost:${this.incubatorPort}`,
+              ACP_NAMESPACE: 'default',
+              ACP_AGENT_ID: agentId,
+              ACP_ROLE: agent.role,
+              ...(agent.wakeOn?.types ? { ACP_WAKE_ON: agent.wakeOn.types.join(',') } : {}),
+              ...config.env,
+            },
+            mcpServers: {
+              acp: { command: 'node', args: [join(pluginDir, 'mcp-server.js')] },
+            },
+          },
+        })) {
+          // Structured message handling
+          if (message.type === 'assistant' && message.message?.content) {
+            for (const block of message.message.content) {
+              if ('text' in block) {
+                this.log(`[${agentId}] ${block.text.slice(0, 200)}`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        this.log(`[${agentId}] Agent SDK error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+      this.telemetry?.record('agent_exit', {
+        agentId, role: agent.role, type: 'claude', exitCode: 0, signal: null,
+      });
+    })();
+
+    this.childInfo.push({ agentId, role: agent.role, type: 'claude', inProcess: true });
+    this.telemetry?.record('agent_spawn', {
+      agentId, role: agent.role, type: 'claude', inProcess: true, sdk: true,
+    });
+    this.log(`Claude ${agentId} (${agent.role}) started via Agent SDK`);
+
+    return true;
   }
 
   /**
@@ -367,10 +449,13 @@ export class BroodOrchestrator {
       if (line) this.log(`[${agentId}:err] ${line}`);
     });
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       this.children.delete(`claude:${agentId}`);
       const status = code === 0 ? 'completed' : `exited with code ${code}`;
       this.log(`[${agentId}] ${status}`);
+      this.telemetry?.record('agent_exit', {
+        agentId, role: agent.role, type: 'claude', exitCode: code, signal,
+      });
     });
 
     if (child.pid) {
@@ -404,6 +489,7 @@ export class BroodOrchestrator {
     const child = this.children.get(`worker:${agentId}`) ?? this.children.get(`drone:${agentId}`) ?? this.children.get(`claude:${agentId}`);
     if (!child) return;
     child.kill('SIGTERM');
+    this.telemetry?.record('agent_kill', { agentId, signal: 'SIGTERM' });
     this.log(`Sent SIGTERM to ${agentId}`);
     // Grace period — SIGKILL if still alive after 5s
     setTimeout(() => {

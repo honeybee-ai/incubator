@@ -221,6 +221,8 @@ export class AgentRunner {
       }
     };
 
+    let exitReason: string = 'unknown';
+
     try {
       // 0a. Connect ACP runtime (invisible coordination)
       if (runtime) {
@@ -458,6 +460,10 @@ export class AgentRunner {
           } else {
             messages.push({ role: 'user', content: '[SYSTEM] Context was compacted. Previous messages were trimmed.' });
           }
+          telemetry?.record('context_compaction', {
+            agentId, role, iteration: iterations,
+            promptTokensBefore: usage.promptTokens, messagesAfter: messages.length,
+          });
           log(`Compacted to ${messages.length} messages`);
         }
 
@@ -469,6 +475,7 @@ export class AgentRunner {
         // Check for "DONE" in content — always exits, even in reactive mode
         if (response.content && /\bDONE\b/.test(response.content)) {
           log('Agent said DONE — finishing');
+          exitReason = 'done';
           break;
         }
 
@@ -478,6 +485,7 @@ export class AgentRunner {
             const maxWakes = effectiveWakeOn.maxWakes ?? 0;
             if (maxWakes > 0 && ++wakeCount >= maxWakes) {
               log(`Max wakes reached (${maxWakes}) — exiting`);
+              exitReason = 'max_wakes';
               break;
             }
             if (maxWakes === 0) wakeCount++;
@@ -485,6 +493,7 @@ export class AgentRunner {
             const wakeEvents = await runtime.waitForWake(effectiveWakeOn);
             if (wakeEvents.length === 0) {
               log('Wake timeout — no events, exiting');
+              exitReason = 'wake_timeout';
               break;
             }
             log(`Woke up with ${wakeEvents.length} event(s)`);
@@ -502,6 +511,7 @@ export class AgentRunner {
             continue;
           }
           log('No tool calls — agent finished');
+          exitReason = 'no_tool_calls';
           break;
         }
 
@@ -569,6 +579,8 @@ export class AgentRunner {
             }
           }
 
+          telemetry?.record('tool_call', { agentId, role, tool: name });
+
           // Log result
           log(`${DIM}→ ${result}${RESET}${color}`);
 
@@ -600,7 +612,13 @@ export class AgentRunner {
 
         if (halted) {
           log('Agent halted — exiting loop');
+          exitReason = 'halted';
           if (runtime) await runtime.onComplete('Agent halted', totalUsage);
+          telemetry?.record('agent_complete', {
+            agentId, role, status: 'completed', iterations, exitReason,
+            provider: provider.type, model: provider.model,
+            totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime, wakeCount,
+          });
           return { agentId, role, status: 'completed', iterations, usage: totalUsage, iterationUsage };
         }
 
@@ -616,8 +634,10 @@ export class AgentRunner {
       }
 
       if (this.stopFlag) {
+        exitReason = 'stopped';
         log('Stopped by runner');
       } else if (iterations >= maxIterations) {
+        exitReason = 'max_iterations';
         log(`Hit max iterations (${maxIterations})`);
       }
 
@@ -628,9 +648,10 @@ export class AgentRunner {
       const summary = `Agent ${agentId} completed after ${iterations} iterations (${totalUsage.totalTokens.toLocaleString()} tokens)`;
       if (runtime) await runtime.onComplete(summary, totalUsage);
       telemetry?.record('agent_complete', {
-        agentId, role, status: 'completed', iterations,
+        agentId, role, status: 'completed', iterations, exitReason,
+        provider: provider.type, model: provider.model,
         promptTokens: totalUsage.promptTokens, completionTokens: totalUsage.completionTokens,
-        totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime,
+        totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime, wakeCount,
       });
       log(`Done (${iterations} iterations, ${totalUsage.totalTokens.toLocaleString()} tokens)`);
       return { agentId, role, status: 'completed', iterations, usage: totalUsage, iterationUsage };
@@ -646,7 +667,8 @@ export class AgentRunner {
         try { await runtime.onComplete(`Error: ${errMsg}`, totalUsage); } catch { /* ignore */ }
       }
       telemetry?.record('agent_complete', {
-        agentId, role, status: 'error', iterations, error: errMsg,
+        agentId, role, status: 'error', iterations, exitReason: 'error', error: errMsg,
+        provider: provider.type, model: provider.model,
         totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime,
       });
       return { agentId, role, status: 'error', iterations, error: errMsg, usage: totalUsage, iterationUsage };

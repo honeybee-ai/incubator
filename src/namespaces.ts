@@ -26,6 +26,7 @@ export class NamespaceRegistry {
   private protocols = new Map<string, ProtocolSpec>();
   private guard?: Guard;
   private verbose?: boolean;
+  private telemetry?: { record(type: string, meta: Record<string, unknown>): void };
   private backendConfig: BackendConfig;
   private bus?: NotificationBus;
   private router?: TopicRouter;
@@ -34,9 +35,10 @@ export class NamespaceRegistry {
     this.backendConfig = backendConfig ?? { type: 'memory' };
   }
 
-  setGuard(guard: Guard, verbose?: boolean): void {
+  setGuard(guard: Guard, verbose?: boolean, telemetry?: { record(type: string, meta: Record<string, unknown>): void }): void {
     this.guard = guard;
     this.verbose = verbose;
+    this.telemetry = telemetry;
   }
 
   setBus(bus: NotificationBus, routerOptions?: TopicRouterOptions): void {
@@ -81,7 +83,7 @@ export class NamespaceRegistry {
       installNotifications(stores, this.bus, namespace);
     }
     if (this.guard) {
-      stores = createGuardedStores(stores, this.guard, this.verbose);
+      stores = createGuardedStores(stores, this.guard, this.verbose, this.telemetry);
     }
     this.namespaces.set(namespace, stores);
 

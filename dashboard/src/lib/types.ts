@@ -240,10 +240,16 @@ export interface GovernanceDef {
 
 // ─── WebSocket ──────────────────────────────────────────────
 
+export interface MetricsSnapshot {
+  counts: Record<string, number>
+  numerics: Record<string, { avg: number; count: number }>
+}
+
 export type WsMessage =
   | { type: 'event'; event: IncubatorEvent }
   | { type: 'replay_done'; cursor: number }
   | { type: 'ping'; ts: number }
   | { type: 'error'; message: string }
+  | { type: 'metrics'; data: MetricsSnapshot }
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'

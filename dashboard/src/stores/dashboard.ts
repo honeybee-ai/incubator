@@ -14,6 +14,7 @@ import type {
   Conflict,
   ReinforcementRequest,
   Proposal,
+  MetricsSnapshot,
 } from '@/lib/types'
 
 interface DashboardState {
@@ -80,6 +81,11 @@ interface DashboardState {
   proposals: Proposal[]
   setProposals: (p: Proposal[]) => void
 
+  // ─── Metrics ─────────────────────────────────────────────
+
+  metrics: (MetricsSnapshot & { receivedAt: number }) | null
+  setMetrics: (data: MetricsSnapshot) => void
+
   // ─── Agents tracking ─────────────────────────────────────
 
   knownAgents: Map<string, number>
@@ -115,6 +121,7 @@ const INITIAL_DATA = {
   conflicts: [],
   reinforcements: [],
   proposals: [],
+  metrics: null as (MetricsSnapshot & { receivedAt: number }) | null,
   knownAgents: new Map<string, number>(),
 }
 
@@ -182,6 +189,10 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   setReinforcements: (reinforcements) => set({ reinforcements }),
   proposals: [],
   setProposals: (proposals) => set({ proposals }),
+
+  // Metrics
+  metrics: null,
+  setMetrics: (data) => set({ metrics: { ...data, receivedAt: Date.now() } }),
 
   // Agents
   knownAgents: new Map(),

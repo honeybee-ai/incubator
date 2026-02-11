@@ -22,6 +22,8 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKey?: string;
   model: string;
+  /** Provider name from catalog (e.g. 'cerebras', 'groq'). Used for SDK dispatch. */
+  providerName?: string;
 }
 
 export type AgentMode = 'worker' | 'drone';

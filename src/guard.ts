@@ -45,7 +45,11 @@ export function loadGuard(verbose?: boolean): Guard {
  * Concatenate text fields and run a single scan.
  * Throws CarapaceBlockedError on BLOCK, logs on WARN.
  */
-function scanFields(guard: Guard, fields: (string | undefined)[], verbose?: boolean): void {
+interface TelemetryLike {
+  record(type: string, meta: Record<string, unknown>): void;
+}
+
+function scanFields(guard: Guard, fields: (string | undefined)[], verbose?: boolean, telemetry?: TelemetryLike): void {
   const text = fields.filter(Boolean).join(' ');
   if (!text) return;
 
@@ -54,6 +58,13 @@ function scanFields(guard: Guard, fields: (string | undefined)[], verbose?: bool
   if (verbose && result.findings.length > 0) {
     const ts = new Date().toISOString().slice(11, 23);
     console.error(`  ${ts} [carapace] score=${result.score} action=${result.action} findings=${result.findings.length}`);
+  }
+
+  if (result.action !== 'PASS' && telemetry) {
+    telemetry.record('guard_scan', {
+      action: result.action, score: result.score,
+      findingsCount: result.findings.length, side: 'write',
+    });
   }
 
   if (result.action === 'BLOCK') {
@@ -70,7 +81,7 @@ function scanFields(guard: Guard, fields: (string | undefined)[], verbose?: bool
  * Scan fields and return true if content is clean (PASS/LOG/WARN), false if BLOCK.
  * Used for read-side filtering — poisoned data is silently dropped, not thrown.
  */
-function isClean(guard: Guard, fields: (string | undefined)[], verbose?: boolean): boolean {
+function isClean(guard: Guard, fields: (string | undefined)[], verbose?: boolean, telemetry?: TelemetryLike): boolean {
   const text = fields.filter(Boolean).join(' ');
   if (!text) return true;
 
@@ -81,6 +92,10 @@ function isClean(guard: Guard, fields: (string | undefined)[], verbose?: boolean
       const ts = new Date().toISOString().slice(11, 23);
       console.error(`  ${ts} [carapace] READ BLOCKED: score=${result.score} — poisoned entry filtered out`);
     }
+    telemetry?.record('guard_scan', {
+      action: 'BLOCK', score: result.score,
+      findingsCount: result.findings.length, side: 'read',
+    });
     return false;
   }
 
@@ -98,7 +113,7 @@ function stringify(v: unknown): string {
  * Writes throw CarapaceBlockedError on BLOCK. Reads silently filter out poisoned entries.
  * Internal system events bypass the guard.
  */
-export function createGuardedStores(stores: Stores, guard: Guard, verbose?: boolean): Stores {
+export function createGuardedStores(stores: Stores, guard: Guard, verbose?: boolean, telemetry?: TelemetryLike): Stores {
   // ClaimStore and DiscoveryStore emit internal events like "claim.acquired" and
   // "discovery.published" — these are system-generated and bypass the guard.
   // We only guard user-facing methods.
@@ -107,30 +122,30 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
     state: {
       ...stores.state,
       set: async (key: string, value: unknown, agentId: string, category?: string, ttlMs?: number) => {
-        scanFields(guard, [key, stringify(value), category], verbose);
+        scanFields(guard, [key, stringify(value), category], verbose, telemetry);
         return stores.state.set(key, value, agentId, category, ttlMs);
       },
       get: async (key: string) => {
         const entry = await stores.state.get(key);
         if (!entry) return null;
-        if (!isClean(guard, [entry.key, stringify(entry.value), entry.category], verbose)) return null;
+        if (!isClean(guard, [entry.key, stringify(entry.value), entry.category], verbose, telemetry)) return null;
         return entry;
       },
       query: async (pattern?: string, category?: string) => {
         const entries = await stores.state.query(pattern, category);
-        return entries.filter(e => isClean(guard, [e.key, stringify(e.value), e.category], verbose));
+        return entries.filter(e => isClean(guard, [e.key, stringify(e.value), e.category], verbose, telemetry));
       },
     },
     events: {
       ...stores.events,
       publish: async (type: string, data: unknown, agentId: string) => {
-        scanFields(guard, [type, stringify(data)], verbose);
+        scanFields(guard, [type, stringify(data)], verbose, telemetry);
         return stores.events.publish(type, data, agentId);
       },
       getEvents: async (since?: number, type?: string) => {
         const result = await stores.events.getEvents(since, type);
         return {
-          events: result.events.filter(e => isClean(guard, [e.type, stringify(e.data)], verbose)),
+          events: result.events.filter(e => isClean(guard, [e.type, stringify(e.data)], verbose, telemetry)),
           cursor: result.cursor,
         };
       },
@@ -138,42 +153,42 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
     claims: {
       ...stores.claims,
       claim: async (resource: string, value: string, agentId: string, ttlMs?: number) => {
-        scanFields(guard, [resource, value], verbose);
+        scanFields(guard, [resource, value], verbose, telemetry);
         return stores.claims.claim(resource, value, agentId, ttlMs);
       },
       check: async (resource: string) => {
         const claim = await stores.claims.check(resource);
         if (!claim) return null;
-        if (!isClean(guard, [claim.resource, claim.value], verbose)) return null;
+        if (!isClean(guard, [claim.resource, claim.value], verbose, telemetry)) return null;
         return claim;
       },
       list: async (pattern?: string) => {
         const claims = await stores.claims.list(pattern);
-        return claims.filter(c => isClean(guard, [c.resource, c.value], verbose));
+        return claims.filter(c => isClean(guard, [c.resource, c.value], verbose, telemetry));
       },
     },
     discoveries: {
       ...stores.discoveries,
       publish: async (topic: string, content: string, agentId: string, category?: string) => {
-        scanFields(guard, [topic, content, category], verbose);
+        scanFields(guard, [topic, content, category], verbose, telemetry);
         return stores.discoveries.publish(topic, content, agentId, category);
       },
       search: async (query?: string, category?: string) => {
         const discoveries = await stores.discoveries.search(query, category);
-        return discoveries.filter(d => isClean(guard, [d.topic, d.content, d.category], verbose));
+        return discoveries.filter(d => isClean(guard, [d.topic, d.content, d.category], verbose, telemetry));
       },
     },
     messages: {
       ...stores.messages,
       send: async (from: string, to: string, content: string, replyTo?: string) => {
-        scanFields(guard, [content], verbose);
+        scanFields(guard, [content], verbose, telemetry);
         return stores.messages.send(from, to, content, replyTo);
       },
     },
     help: {
       ...stores.help,
       request: async (agentId: string, problem: string, needsCapability?: string, urgency?: 'low' | 'normal' | 'high') => {
-        scanFields(guard, [problem, needsCapability], verbose);
+        scanFields(guard, [problem, needsCapability], verbose, telemetry);
         return stores.help.request(agentId, problem, needsCapability, urgency);
       },
     },
@@ -195,12 +210,13 @@ export function scanSnapshot(
   snapshot: { state: unknown[]; claims: unknown[]; events: unknown[]; discoveries: unknown[] },
   guard: Guard,
   verbose?: boolean,
+  telemetry?: TelemetryLike,
 ): { blocked: number } {
   let blocked = 0;
 
   const scanAndFilter = <T>(items: T[], getFields: (item: T) => (string | undefined)[]): T[] => {
     return items.filter(item => {
-      if (isClean(guard, getFields(item), verbose)) return true;
+      if (isClean(guard, getFields(item), verbose, telemetry)) return true;
       blocked++;
       return false;
     });
@@ -228,6 +244,9 @@ export function scanSnapshot(
 
   if (blocked > 0) {
     console.error(`[incubator] Carapace: ${blocked} poisoned entries removed from snapshot`);
+    telemetry?.record('guard_scan', {
+      action: 'BLOCK', side: 'snapshot', blockedCount: blocked,
+    });
   }
 
   return { blocked };
