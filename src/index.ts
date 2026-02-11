@@ -283,7 +283,7 @@ export async function main() {
     const requestHandler = async (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
       // REST API routes - handled before MCP
       if (req.url?.startsWith('/api/')) {
-        await handleRestRequest(req, res, registry, verbose);
+        await handleRestRequest(req, res, registry, verbose, danceSupport);
         return;
       }
 

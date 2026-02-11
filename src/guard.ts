@@ -120,7 +120,6 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
 
   return {
     state: {
-      ...stores.state,
       set: async (key: string, value: unknown, agentId: string, category?: string, ttlMs?: number) => {
         scanFields(guard, [key, stringify(value), category], verbose, telemetry);
         return stores.state.set(key, value, agentId, category, ttlMs);
@@ -131,13 +130,15 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
         if (!isClean(guard, [entry.key, stringify(entry.value), entry.category], verbose, telemetry)) return null;
         return entry;
       },
+      delete: (key: string) => stores.state.delete(key),
       query: async (pattern?: string, category?: string) => {
         const entries = await stores.state.query(pattern, category);
         return entries.filter(e => isClean(guard, [e.key, stringify(e.value), e.category], verbose, telemetry));
       },
+      getAll: () => stores.state.getAll(),
+      load: (entries: import('./types.js').StateEntry[]) => stores.state.load(entries),
     },
     events: {
-      ...stores.events,
       publish: async (type: string, data: unknown, agentId: string) => {
         scanFields(guard, [type, stringify(data)], verbose, telemetry);
         return stores.events.publish(type, data, agentId);
@@ -149,13 +150,16 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
           cursor: result.cursor,
         };
       },
+      getCursor: () => stores.events.getCursor(),
+      getAll: () => stores.events.getAll(),
+      load: (events: import('./types.js').IncubatorEvent[], cursor: number) => stores.events.load(events, cursor),
     },
     claims: {
-      ...stores.claims,
       claim: async (resource: string, value: string, agentId: string, ttlMs?: number) => {
         scanFields(guard, [resource, value], verbose, telemetry);
         return stores.claims.claim(resource, value, agentId, ttlMs);
       },
+      release: (resource: string, agentId: string) => stores.claims.release(resource, agentId),
       check: async (resource: string) => {
         const claim = await stores.claims.check(resource);
         if (!claim) return null;
@@ -166,9 +170,10 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
         const claims = await stores.claims.list(pattern);
         return claims.filter(c => isClean(guard, [c.resource, c.value], verbose, telemetry));
       },
+      getAll: () => stores.claims.getAll(),
+      load: (claims: import('./types.js').Claim[]) => stores.claims.load(claims),
     },
     discoveries: {
-      ...stores.discoveries,
       publish: async (topic: string, content: string, agentId: string, category?: string) => {
         scanFields(guard, [topic, content, category], verbose, telemetry);
         return stores.discoveries.publish(topic, content, agentId, category);
@@ -177,20 +182,25 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
         const discoveries = await stores.discoveries.search(query, category);
         return discoveries.filter(d => isClean(guard, [d.topic, d.content, d.category], verbose, telemetry));
       },
+      getAll: () => stores.discoveries.getAll(),
+      load: (discoveries: import('./types.js').Discovery[]) => stores.discoveries.load(discoveries),
     },
     messages: {
-      ...stores.messages,
       send: async (from: string, to: string, content: string, replyTo?: string) => {
         scanFields(guard, [content], verbose, telemetry);
         return stores.messages.send(from, to, content, replyTo);
       },
+      getFor: (agentId: string, since?: string) => stores.messages.getFor(agentId, since),
+      getAll: () => stores.messages.getAll(),
     },
     help: {
-      ...stores.help,
       request: async (agentId: string, problem: string, needsCapability?: string, urgency?: 'low' | 'normal' | 'high') => {
         scanFields(guard, [problem, needsCapability], verbose, telemetry);
         return stores.help.request(agentId, problem, needsCapability, urgency);
       },
+      claim: (requestId: string, agentId: string) => stores.help.claim(requestId, agentId),
+      resolve: (requestId: string, agentId: string) => stores.help.resolve(requestId, agentId),
+      list: (status?: string) => stores.help.list(status),
     },
     progress: stores.progress,
     conflicts: stores.conflicts,

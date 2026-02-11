@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Stores } from './stores/interfaces.js';
 import type { NamespaceRegistry } from './namespaces.js';
+import type { DanceSupport } from './ws.js';
 import { CarapaceBlockedError } from './guard.js';
 import { parseSpec, SpecValidationError } from '@agentcoordinationprotocol/spec';
 
@@ -80,7 +81,7 @@ async function parseBody(req: IncomingMessage): Promise<Record<string, unknown>>
 const RESOURCE_KEYWORDS = new Set([
   'state', 'claims', 'events', 'discoveries', 'health', 'protocol',
   'messages', 'help', 'progress', 'conflicts', 'roles', 'reinforcements', 'governance',
-  'control', 'topics', 'runs',
+  'control', 'topics', 'runs', 'dance',
 ]);
 
 const routes: Route[] = [
@@ -722,7 +723,8 @@ export async function handleRestRequest(
   req: IncomingMessage,
   res: ServerResponse,
   registry: NamespaceRegistry,
-  verbose: boolean
+  verbose: boolean,
+  danceSupport?: DanceSupport,
 ): Promise<boolean> {
   const url = req.url ?? '/';
   if (!url.startsWith('/api/')) return false;
@@ -911,10 +913,63 @@ export async function handleRestRequest(
     return true;
   }
 
-  // ─── Dance tool calls (placeholder — use WebSocket) ─────────
-  const danceMatch = rewrittenPath.match(/^\/api\/dance\/(.+)$/);
+  // ─── Dance tool calls ───────────────────────────────────────
+  const danceMatch = rewrittenPath.match(/^\/api\/dance\/([a-zA-Z0-9_-]+)$/);
   if (danceMatch && req.method === 'POST') {
-    json(res, 501, { error: 'Dance tool calls via REST not yet implemented (use WebSocket)' }, req);
+    if (!danceSupport) {
+      json(res, 404, { error: 'No dance module loaded' }, req);
+      return true;
+    }
+    const toolName = danceMatch[1];
+    const agentId = getAgentId(req, body);
+    const role = typeof body.role === 'string' ? body.role : 'unknown';
+    const args = (typeof body.args === 'object' && body.args !== null ? body.args : {}) as Record<string, unknown>;
+
+    if (verbose) {
+      const ts = new Date().toISOString().slice(11, 23);
+      console.error(`  ${ts} [${agentId}] REST dance_call ${toolName}`);
+    }
+
+    try {
+      const { callDanceTool } = await import('./dances.js');
+      const result = await callDanceTool(
+        danceSupport.module,
+        toolName,
+        args,
+        role,
+        agentId,
+        () => danceSupport!.getState(namespace),
+        danceSupport.getAcpHelper(namespace, agentId),
+      );
+      if ('error' in result) {
+        json(res, 400, { error: result.error }, req);
+      } else {
+        json(res, 200, { result: result.result }, req);
+      }
+    } catch (err) {
+      if (err instanceof CarapaceBlockedError) {
+        json(res, 403, {
+          error: 'prompt_injection_detected',
+          message: err.message,
+        }, req);
+      } else {
+        json(res, 500, { error: 'Dance call failed' }, req);
+      }
+    }
+    return true;
+  }
+
+  // POST /api/dance — list available dance tools
+  if (rewrittenPath === '/api/dance' && req.method === 'GET') {
+    if (!danceSupport) {
+      json(res, 200, { tools: [] }, req);
+      return true;
+    }
+    const tools: Array<{ name: string; description: string; params: unknown }> = [];
+    for (const [name, def] of danceSupport.module.tools) {
+      tools.push({ name, description: def.description, params: def.params });
+    }
+    json(res, 200, { tools }, req);
     return true;
   }
 
