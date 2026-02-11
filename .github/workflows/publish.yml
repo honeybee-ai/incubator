@@ -43,4 +43,5 @@ jobs:
       - run: npm install -g npm@latest
       - run: pnpm install
       - run: pnpm run build
-      - run: npm publish --provenance --access public
+      # --provenance requires public source repo; add back when repo goes public
+      - run: npm publish --access public

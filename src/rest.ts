@@ -16,6 +16,20 @@ function getAllowedOrigin(req: IncomingMessage): string {
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin;
   // Allow honeyb.dev subdomains
   if (/^https:\/\/[a-z0-9-]+\.honeyb\.dev$/.test(origin)) return origin;
+  // Allow extra origins via INCUBATOR_CORS_ORIGINS (comma-separated)
+  const extra = process.env.INCUBATOR_CORS_ORIGINS;
+  if (extra) {
+    for (const allowed of extra.split(',')) {
+      const pattern = allowed.trim();
+      if (pattern && origin === pattern) return origin;
+      // Support wildcard subdomains: *.example.dev
+      if (pattern.startsWith('*.')) {
+        const suffix = pattern.slice(1); // .example.dev
+        const re = new RegExp(`^https://[a-z0-9-]+${suffix.replace(/\./g, '\\.')}(:\\d+)?$`);
+        if (re.test(origin)) return origin;
+      }
+    }
+  }
   return '';
 }
 
@@ -782,7 +796,8 @@ export async function handleRestRequest(
 
         // Scan protocol spec text content for prompt injection via guarded state
         const specTexts: string[] = [];
-        const s = spec as Record<string, unknown>;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const s: any = spec;
         if (s.roles && typeof s.roles === 'object') {
           for (const role of Object.values(s.roles as Record<string, Record<string, unknown>>)) {
             if (role?.description) specTexts.push(String(role.description));
@@ -875,6 +890,13 @@ export async function handleRestRequest(
     }
 
     json(res, 404, { error: `No route: ${req.method} ${pathname}` });
+    return true;
+  }
+
+  // ─── Dance tool calls (placeholder — use WebSocket) ─────────
+  const danceMatch = rewrittenPath.match(/^\/api\/dance\/(.+)$/);
+  if (danceMatch && req.method === 'POST') {
+    json(res, 501, { error: 'Dance tool calls via REST not yet implemented (use WebSocket)' }, req);
     return true;
   }
 

@@ -18,8 +18,8 @@ importers:
         specifier: ^1.0.1
         version: 1.0.1
       '@honeybee-ai/hivemind-sdk':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.2.1
+        version: 0.2.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.26.0(zod@3.25.76)
@@ -232,8 +232,8 @@ packages:
     engines: {node: '>=16'}
     hasBin: true
 
-  '@honeybee-ai/hivemind-sdk@0.2.0':
-    resolution: {integrity: sha512-kKGNAZlDczPHVsaKcAYRYkFH1dDJww4MLQqhxNz6TUwFxoCUxAkyl6C2DQ0AnsRNmsSiwrD+n+IR+kbrvS0ufA==}
+  '@honeybee-ai/hivemind-sdk@0.2.1':
+    resolution: {integrity: sha512-Lxp40/wh41FqAlcqKJF/7v1a+bQscKqJzaYY+j/QXow+zupggGubreVr+D0HbRv3Z27fLAE+OCLptdCGZt+3YQ==}
     engines: {node: '>=20'}
 
   '@hono/node-server@1.19.9':
@@ -1264,7 +1264,7 @@ snapshots:
 
   '@honeybee-ai/carapace@1.0.1': {}
 
-  '@honeybee-ai/hivemind-sdk@0.2.0':
+  '@honeybee-ai/hivemind-sdk@0.2.1':
     dependencies:
       zod: 3.25.76
 
