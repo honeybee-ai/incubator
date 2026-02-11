@@ -102,100 +102,80 @@ export function createGuardedStores(stores: Stores, guard: Guard, verbose?: bool
   // "discovery.published" — these are system-generated and bypass the guard.
   // We only guard user-facing methods.
 
-  // ─── State ───────────────────────────────────────────────
-
-  const guardedState = Object.create(stores.state) as Stores['state'];
-
-  guardedState.set = async (key: string, value: unknown, agentId: string, category?: string, ttlMs?: number) => {
-    scanFields(guard, [key, stringify(value), category], verbose);
-    return await stores.state.set(key, value, agentId, category, ttlMs);
-  };
-
-  guardedState.get = async (key: string) => {
-    const entry = await stores.state.get(key);
-    if (!entry) return null;
-    if (!isClean(guard, [entry.key, stringify(entry.value), entry.category], verbose)) return null;
-    return entry;
-  };
-
-  guardedState.query = async (pattern?: string, category?: string) => {
-    const entries = await stores.state.query(pattern, category);
-    return entries.filter(e => isClean(guard, [e.key, stringify(e.value), e.category], verbose));
-  };
-
-  // ─── Events ──────────────────────────────────────────────
-
-  const guardedEvents = Object.create(stores.events) as Stores['events'];
-
-  guardedEvents.publish = async (type: string, data: unknown, agentId: string) => {
-    scanFields(guard, [type, stringify(data)], verbose);
-    return await stores.events.publish(type, data, agentId);
-  };
-
-  guardedEvents.getEvents = async (since?: number, type?: string) => {
-    const result = await stores.events.getEvents(since, type);
-    return {
-      events: result.events.filter(e => isClean(guard, [e.type, stringify(e.data)], verbose)),
-      cursor: result.cursor,
-    };
-  };
-
-  // ─── Claims ──────────────────────────────────────────────
-
-  const guardedClaims = Object.create(stores.claims) as Stores['claims'];
-
-  guardedClaims.claim = async (resource: string, value: string, agentId: string, ttlMs?: number) => {
-    scanFields(guard, [resource, value], verbose);
-    return await stores.claims.claim(resource, value, agentId, ttlMs);
-  };
-
-  guardedClaims.check = async (resource: string) => {
-    const claim = await stores.claims.check(resource);
-    if (!claim) return null;
-    if (!isClean(guard, [claim.resource, claim.value], verbose)) return null;
-    return claim;
-  };
-
-  guardedClaims.list = async (pattern?: string) => {
-    const claims = await stores.claims.list(pattern);
-    return claims.filter(c => isClean(guard, [c.resource, c.value], verbose));
-  };
-
-  // ─── Discoveries ─────────────────────────────────────────
-
-  const guardedDiscoveries = Object.create(stores.discoveries) as Stores['discoveries'];
-
-  guardedDiscoveries.publish = async (topic: string, content: string, agentId: string, category?: string) => {
-    scanFields(guard, [topic, content, category], verbose);
-    return await stores.discoveries.publish(topic, content, agentId, category);
-  };
-
-  guardedDiscoveries.search = async (query?: string, category?: string) => {
-    const discoveries = await stores.discoveries.search(query, category);
-    return discoveries.filter(d => isClean(guard, [d.topic, d.content, d.category], verbose));
-  };
-
-  // ─── Messages ───────────────────────────────────────────
-  const guardedMessages = Object.create(stores.messages) as Stores['messages'];
-  guardedMessages.send = async (from: string, to: string, content: string, opts?: { replyTo?: string }) => {
-    scanFields(guard, [content], verbose);
-    return await stores.messages.send(from, to, content, opts);
-  };
-
-  // ─── Help ──────────────────────────────────────────────
-  const guardedHelp = Object.create(stores.help) as Stores['help'];
-  guardedHelp.request = async (agentId: string, problem: string, needsCapability?: string, urgency?: string) => {
-    scanFields(guard, [problem, needsCapability], verbose);
-    return await stores.help.request(agentId, problem, needsCapability, urgency);
-  };
-
   return {
-    state: guardedState,
-    events: guardedEvents,
-    claims: guardedClaims,
-    discoveries: guardedDiscoveries,
-    messages: guardedMessages,
-    help: guardedHelp,
+    state: {
+      ...stores.state,
+      set: async (key: string, value: unknown, agentId: string, category?: string, ttlMs?: number) => {
+        scanFields(guard, [key, stringify(value), category], verbose);
+        return stores.state.set(key, value, agentId, category, ttlMs);
+      },
+      get: async (key: string) => {
+        const entry = await stores.state.get(key);
+        if (!entry) return null;
+        if (!isClean(guard, [entry.key, stringify(entry.value), entry.category], verbose)) return null;
+        return entry;
+      },
+      query: async (pattern?: string, category?: string) => {
+        const entries = await stores.state.query(pattern, category);
+        return entries.filter(e => isClean(guard, [e.key, stringify(e.value), e.category], verbose));
+      },
+    },
+    events: {
+      ...stores.events,
+      publish: async (type: string, data: unknown, agentId: string) => {
+        scanFields(guard, [type, stringify(data)], verbose);
+        return stores.events.publish(type, data, agentId);
+      },
+      getEvents: async (since?: number, type?: string) => {
+        const result = await stores.events.getEvents(since, type);
+        return {
+          events: result.events.filter(e => isClean(guard, [e.type, stringify(e.data)], verbose)),
+          cursor: result.cursor,
+        };
+      },
+    },
+    claims: {
+      ...stores.claims,
+      claim: async (resource: string, value: string, agentId: string, ttlMs?: number) => {
+        scanFields(guard, [resource, value], verbose);
+        return stores.claims.claim(resource, value, agentId, ttlMs);
+      },
+      check: async (resource: string) => {
+        const claim = await stores.claims.check(resource);
+        if (!claim) return null;
+        if (!isClean(guard, [claim.resource, claim.value], verbose)) return null;
+        return claim;
+      },
+      list: async (pattern?: string) => {
+        const claims = await stores.claims.list(pattern);
+        return claims.filter(c => isClean(guard, [c.resource, c.value], verbose));
+      },
+    },
+    discoveries: {
+      ...stores.discoveries,
+      publish: async (topic: string, content: string, agentId: string, category?: string) => {
+        scanFields(guard, [topic, content, category], verbose);
+        return stores.discoveries.publish(topic, content, agentId, category);
+      },
+      search: async (query?: string, category?: string) => {
+        const discoveries = await stores.discoveries.search(query, category);
+        return discoveries.filter(d => isClean(guard, [d.topic, d.content, d.category], verbose));
+      },
+    },
+    messages: {
+      ...stores.messages,
+      send: async (from: string, to: string, content: string, replyTo?: string) => {
+        scanFields(guard, [content], verbose);
+        return stores.messages.send(from, to, content, replyTo);
+      },
+    },
+    help: {
+      ...stores.help,
+      request: async (agentId: string, problem: string, needsCapability?: string, urgency?: 'low' | 'normal' | 'high') => {
+        scanFields(guard, [problem, needsCapability], verbose);
+        return stores.help.request(agentId, problem, needsCapability, urgency);
+      },
+    },
     progress: stores.progress,
     conflicts: stores.conflicts,
     roles: stores.roles,
