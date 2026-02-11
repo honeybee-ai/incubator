@@ -1,0 +1,8 @@
+{
+  "listing": {
+    "title": "claude-acp",
+    "shortDescription": "Multi-agent coordination via ACP protocol",
+    "category": "coordination",
+    "tags": ["acp", "multi-agent", "coordination", "events", "claims"]
+  }
+}

@@ -84,6 +84,14 @@ export interface IReinforcementStore {
   list(): Promise<ReinforcementRequest[]>;
 }
 
+export interface IterationDetail {
+  index: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  timestamp: string;
+}
+
 export interface AgentRun {
   agentId: string;
   role: string;
@@ -93,6 +101,7 @@ export interface AgentRun {
   elapsed?: number;
   iterations?: number;
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  iterationDetails?: IterationDetail[];
   summary?: string;
   error?: string;
 }

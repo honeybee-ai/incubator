@@ -1,0 +1,11 @@
+{
+  "name": "claude-acp",
+  "version": "1.0.0",
+  "description": "ACP coordination for Claude Code - multi-agent events, claims, state, and wait",
+  "author": {
+    "name": "Honeybee AI",
+    "email": "jocelyn@honeyb.dev"
+  },
+  "repository": "https://github.com/honeybee-ai/claude-acp",
+  "keywords": ["acp", "coordination", "multi-agent", "events", "waggle"]
+}

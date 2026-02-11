@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BroodOrchestrator, type AgentsConfig } from './orchestrator.js';
+import { createStores } from './server.js';
+import { LocalBus } from './bus.js';
+import { NamespaceRegistry } from './namespaces.js';
 
 // Mock child_process.spawn
 vi.mock('node:child_process', () => {
@@ -20,6 +23,22 @@ vi.mock('node:child_process', () => {
 // Mock crypto.randomBytes
 vi.mock('node:crypto', () => ({
   randomBytes: vi.fn(() => Buffer.from('abc123', 'hex')),
+}));
+
+// Mock AgentPool for in-process mode tests
+const mockPoolStartAgent = vi.fn(async (spec: { role: string }) => `${spec.role}_pool123`);
+const mockPoolKillAgent = vi.fn(async () => {});
+const mockPoolShutdown = vi.fn(async () => {});
+const mockPoolGetAgents = vi.fn(() => []);
+
+vi.mock('./agent-pool.js', () => ({
+  AgentPool: vi.fn().mockImplementation(() => ({
+    startAgent: mockPoolStartAgent,
+    killAgent: mockPoolKillAgent,
+    shutdown: mockPoolShutdown,
+    getAgents: mockPoolGetAgents,
+    size: 0,
+  })),
 }));
 
 function makeConfig(overrides?: Partial<AgentsConfig>): AgentsConfig {
@@ -271,5 +290,189 @@ describe('BroodOrchestrator', () => {
     expect(orch.getAgents().length).toBe(0);
 
     await orch.shutdown();
+  });
+
+  it('spawns claude agents with ACP env vars', async () => {
+    const config = makeConfig({
+      stagger: 0,
+      agents: [{ role: 'game_master', type: 'claude' }],
+    });
+    const orch = new BroodOrchestrator(config, 3100, undefined, undefined, false);
+    await orch.start();
+
+    // 1 claude agent (no propolis)
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+
+    // Spawns 'claude' binary, not node
+    const call = spawnMock.mock.calls[0];
+    expect(call[0]).toBe('claude');
+
+    // Args include --print and --dangerously-skip-permissions
+    const args = call[1] as string[];
+    expect(args).toContain('--print');
+    expect(args).toContain('--dangerously-skip-permissions');
+
+    // Env includes ACP vars
+    const env = call[2].env as Record<string, string>;
+    expect(env.INCUBATOR_URL).toBe('http://localhost:3100');
+    expect(env.ACP_NAMESPACE).toBe('default');
+    expect(env.ACP_ROLE).toBe('game_master');
+    expect(env.ACP_AGENT_ID).toMatch(/^game_master_/);
+
+    await orch.shutdown();
+  });
+
+  it('reports claude type in getAgents', async () => {
+    const config = makeConfig({
+      stagger: 0,
+      agents: [{ role: 'npc', type: 'claude' }],
+    });
+    const orch = new BroodOrchestrator(config, 3100, undefined, undefined, false);
+    await orch.start();
+
+    const agents = orch.getAgents();
+    expect(agents.length).toBe(1);
+    expect(agents[0].type).toBe('claude');
+    expect(agents[0].role).toBe('npc');
+
+    await orch.shutdown();
+  });
+
+  it('spawns mixed hive/claude agents without propolis for claude', async () => {
+    const config = makeConfig({
+      stagger: 0,
+      agents: [
+        { role: 'worker_agent', type: 'worker' },
+        { role: 'claude_agent', type: 'claude' },
+      ],
+    });
+    const orch = new BroodOrchestrator(config, 3100, undefined, undefined, false);
+    await orch.start();
+
+    // 2 spawns: 1 worker (node) + 1 claude (claude binary)
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+
+    // First is node (worker)
+    expect(spawnMock.mock.calls[0][0]).toBe(process.execPath);
+
+    // Second is claude binary
+    expect(spawnMock.mock.calls[1][0]).toBe('claude');
+
+    await orch.shutdown();
+  });
+
+  it('passes wake_on as ACP_WAKE_ON env var to claude agents', async () => {
+    const config = makeConfig({
+      stagger: 0,
+      agents: [{
+        role: 'listener',
+        type: 'claude',
+        wakeOn: { types: ['player.action', 'game.start'], timeout: 30000 },
+      }],
+    });
+    const orch = new BroodOrchestrator(config, 3100, undefined, undefined, false);
+    await orch.start();
+
+    const env = spawnMock.mock.calls[0][2].env as Record<string, string>;
+    expect(env.ACP_WAKE_ON).toBe('player.action,game.start');
+
+    await orch.shutdown();
+  });
+
+  // ─── In-process mode tests ────────────────────────────────────────
+
+  describe('in-process mode (with stores)', () => {
+    let bus: LocalBus;
+    let registry: NamespaceRegistry;
+
+    beforeEach(() => {
+      bus = new LocalBus();
+      registry = new NamespaceRegistry();
+      registry.setBus(bus);
+      mockPoolStartAgent.mockClear();
+      mockPoolKillAgent.mockClear();
+      mockPoolShutdown.mockClear();
+      mockPoolGetAgents.mockClear();
+    });
+
+    it('worker agents use pool (no spawn, no PID)', async () => {
+      const stores = registry.get('default');
+      const config = makeConfig({
+        stagger: 0,
+        agents: [{ role: 'researcher' }, { role: 'writer' }],
+      });
+      const orch = new BroodOrchestrator(config, 3100, bus, stores.runs, false, stores, registry);
+      await orch.start();
+
+      // Workers should go through pool, not spawn
+      expect(mockPoolStartAgent).toHaveBeenCalledTimes(2);
+      expect(spawnMock).toHaveBeenCalledTimes(0);
+
+      // getAgents should include pool agents (marked as inProcess)
+      const agents = orch.getAgents();
+      expect(agents.length).toBe(2);
+      expect(agents[0].inProcess).toBe(true);
+      expect(agents[0].pid).toBeUndefined();
+
+      await orch.shutdown();
+    });
+
+    it('drone agents still use spawn with stores', async () => {
+      const stores = registry.get('default');
+      const config = makeConfig({
+        stagger: 0,
+        agents: [{ role: 'researcher', type: 'drone' }],
+      });
+      const orch = new BroodOrchestrator(config, 3100, bus, stores.runs, false, stores, registry);
+      await orch.start();
+
+      // Drones should be spawned (propolis + drone)
+      expect(spawnMock).toHaveBeenCalledTimes(2); // propolis + drone
+      expect(mockPoolStartAgent).toHaveBeenCalledTimes(0);
+
+      await orch.shutdown();
+    });
+
+    it('mixed mode: pool workers + spawned drones', async () => {
+      const stores = registry.get('default');
+      const config = makeConfig({
+        stagger: 0,
+        agents: [
+          { role: 'researcher', type: 'worker' },
+          { role: 'writer', type: 'drone' },
+          { role: 'npc', type: 'claude' },
+        ],
+      });
+      const orch = new BroodOrchestrator(config, 3100, bus, stores.runs, false, stores, registry);
+      await orch.start();
+
+      // Worker → pool, drone → spawn (propolis + drone), claude → spawn
+      expect(mockPoolStartAgent).toHaveBeenCalledTimes(1);
+      expect(spawnMock).toHaveBeenCalledTimes(3); // propolis + drone + claude
+
+      await orch.shutdown();
+    });
+
+    it('shutdown stops pool agents and child processes', async () => {
+      const stores = registry.get('default');
+      const config = makeConfig({
+        stagger: 0,
+        agents: [
+          { role: 'worker_agent', type: 'worker' },
+          { role: 'drone_agent', type: 'drone' },
+        ],
+      });
+      const orch = new BroodOrchestrator(config, 3100, bus, stores.runs, false, stores, registry);
+      await orch.start();
+
+      await orch.shutdown();
+
+      expect(mockPoolShutdown).toHaveBeenCalledTimes(1);
+      // Child processes should also get SIGTERM
+      for (const call of spawnMock.mock.results) {
+        const child = call.value;
+        expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      }
+    });
   });
 });

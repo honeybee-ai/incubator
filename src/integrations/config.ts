@@ -1,5 +1,6 @@
 /**
- * Integration config — reads/writes ~/.config/honeybee/integrations.json
+ * Integration config — reads/writes ~/.honeyb/integrations.json
+ * Falls back to legacy ~/.config/honeybee/integrations.json
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -14,12 +15,25 @@ export interface IntegrationEntry {
 
 export type IntegrationsConfig = Record<string, IntegrationEntry>;
 
-function configDir(): string {
+function honeybDir(): string {
+  return join(homedir(), '.honeyb');
+}
+
+function legacyDir(): string {
   return join(homedir(), '.config', 'honeybee');
 }
 
 function configPath(): string {
-  return join(configDir(), 'integrations.json');
+  const newPath = join(honeybDir(), 'integrations.json');
+  if (existsSync(newPath)) return newPath;
+  // Fallback to legacy
+  const legacyPath = join(legacyDir(), 'integrations.json');
+  if (existsSync(legacyPath)) return legacyPath;
+  return newPath;
+}
+
+function writeConfigPath(): string {
+  return join(honeybDir(), 'integrations.json');
 }
 
 export function loadIntegrationsConfig(): IntegrationsConfig {
@@ -33,11 +47,11 @@ export function loadIntegrationsConfig(): IntegrationsConfig {
 }
 
 export function saveIntegrationsConfig(config: IntegrationsConfig): void {
-  const dir = configDir();
+  const dir = honeybDir();
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(configPath(), JSON.stringify(config, null, 2) + '\n');
+  writeFileSync(writeConfigPath(), JSON.stringify(config, null, 2) + '\n');
 }
 
 export function enableIntegration(name: string, pkg: string, userConfig: Record<string, string> = {}): void {

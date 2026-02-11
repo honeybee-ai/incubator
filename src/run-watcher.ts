@@ -1,5 +1,5 @@
 import type { NotificationBus } from './bus.js';
-import type { IRunStore } from './stores/interfaces.js';
+import type { IRunStore, IterationDetail } from './stores/interfaces.js';
 import type { IncubatorEvent } from './types.js';
 
 /**
@@ -56,12 +56,23 @@ export class RunWatcher {
       if (summary?.startsWith('Error:')) status = 'error';
       if (summary === 'Agent halted') status = 'halted';
 
+      // Convert iterationUsage array to IterationDetail array
+      const rawIterations = data.iterationUsage as Array<{ promptTokens: number; completionTokens: number; totalTokens: number }> | undefined;
+      const iterationDetails: IterationDetail[] | undefined = rawIterations?.map((u, i) => ({
+        index: i,
+        promptTokens: u.promptTokens,
+        completionTokens: u.completionTokens,
+        totalTokens: u.totalTokens,
+        timestamp: new Date().toISOString(),
+      }));
+
       await this.runs.complete(agentId, {
         status,
         usage,
         summary,
         iterations,
         elapsed,
+        iterationDetails,
         ...(status === 'error' ? { error: summary } : {}),
       });
     }

@@ -1,12 +1,50 @@
 {
   "name": "@honeybee-ai/incubator",
-  "version": "1.0.1",
+  "version": "1.0.5",
   "description": "Give your agent swarm shared memory. MCP server + REST API for multi-agent coordination.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "incubator": "dist/index.js"
+    "incubator": "dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./stores": {
+      "import": "./dist/stores/interfaces.js",
+      "types": "./dist/stores/interfaces.d.ts"
+    },
+    "./runtime": {
+      "import": "./dist/agent/runner.js",
+      "types": "./dist/agent/runner.d.ts"
+    },
+    "./providers": {
+      "import": "./dist/agent/providers.js",
+      "types": "./dist/agent/providers.d.ts"
+    },
+    "./waggle": {
+      "import": "./dist/waggle/compound.js",
+      "types": "./dist/waggle/compound.d.ts"
+    },
+    "./acp": {
+      "import": "./dist/agent/acp/direct-runtime.js",
+      "types": "./dist/agent/acp/direct-runtime.d.ts"
+    },
+    "./bus": {
+      "import": "./dist/bus.js",
+      "types": "./dist/bus.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "types": "./dist/types.d.ts"
+    },
+    "./event-matcher": {
+      "import": "./dist/agent/acp/event-matcher.js",
+      "types": "./dist/agent/acp/event-matcher.d.ts"
+    }
   },
   "files": [
     "dist",

@@ -669,6 +669,24 @@ const routes: Route[] = [
       json(res, 200, { count: runs.length, runs });
     },
   },
+  // ─── Iteration detail per agent ────────────────────────────
+  {
+    method: 'GET',
+    pattern: /^\/api\/runs\/([^/]+)\/iterations$/,
+    handler: async (_req, res, stores, match) => {
+      const agentId = decodeURIComponent(match[1]);
+      const run = await stores.runs.get(agentId);
+      if (!run) {
+        json(res, 200, { found: false, agentId, iterations: [] });
+        return;
+      }
+      json(res, 200, {
+        found: true,
+        agentId,
+        iterations: run.iterationDetails ?? [],
+      });
+    },
+  },
 ];
 
 /**

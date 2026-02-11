@@ -30,6 +30,7 @@ export class CarapaceBlockedError extends Error {
 
 /**
  * Load carapace (CJS) from an ESM context via createRequire.
+ * Carapace uses __dirname + fs.readFileSync for pattern loading — cannot be ESM-imported.
  */
 export function loadGuard(verbose?: boolean): Guard {
   const require = createRequire(import.meta.url);

@@ -19,20 +19,20 @@ const { loadIntegrationsConfig, saveIntegrationsConfig, enableIntegration, disab
   await import('./config.js');
 
 describe('integration config', () => {
-  const configDir = join(tempHome, '.config', 'honeybee');
-  const configFile = join(configDir, 'integrations.json');
+  const legacyDir = join(tempHome, '.config', 'honeybee');
+  const legacyFile = join(legacyDir, 'integrations.json');
+  const honeybDir = join(tempHome, '.honeyb');
+  const configFile = join(honeybDir, 'integrations.json');
 
   beforeEach(() => {
-    // Clean up config between tests
-    if (existsSync(configFile)) {
-      rmSync(configFile);
-    }
+    // Clean up config between tests (both old and new paths)
+    if (existsSync(legacyFile)) rmSync(legacyFile);
+    if (existsSync(configFile)) rmSync(configFile);
   });
 
   afterEach(() => {
-    if (existsSync(configFile)) {
-      rmSync(configFile);
-    }
+    if (existsSync(legacyFile)) rmSync(legacyFile);
+    if (existsSync(configFile)) rmSync(configFile);
   });
 
   it('loadIntegrationsConfig returns empty object when no file', () => {
@@ -100,7 +100,7 @@ describe('integration config', () => {
   });
 
   it('loadIntegrationsConfig handles corrupt JSON gracefully', () => {
-    mkdirSync(configDir, { recursive: true });
+    mkdirSync(honeybDir, { recursive: true });
     writeFileSync(configFile, 'not json!!!');
 
     const config = loadIntegrationsConfig();
