@@ -17,10 +17,10 @@ import { NativeToolClient } from './agent/native-client.js';
 import type { ToolClient } from './agent/tool-client.js';
 import type { ToolDef } from './agent/types.js';
 import { resolveProvider } from './agent/providers.js';
-import { loadGuard, type Guard } from './propolis/guard.js';
-import { getPropolis } from './tool-loader.js';
+import type { Guard } from './propolis/guard.js';
+import type { PluginManager } from './plugins/index.js';
 
-/** No-op tool client when propolis is not available. */
+/** No-op tool client when plugins provide no tool entries. */
 class NullToolClient implements ToolClient {
   getToolDefs(): ToolDef[] { return []; }
   hasToolName(): boolean { return false; }
@@ -43,6 +43,7 @@ export interface PoolContext {
   provider: string;
   models?: Record<string, string>;
   telemetry?: TelemetryReporter;
+  pluginManager?: PluginManager;
 }
 
 interface PoolAgent {
@@ -85,11 +86,11 @@ export class AgentPool {
     };
     const runtime = new DirectRuntime(runtimeConfig);
 
-    // Create tool client (requires propolis)
+    // Create tool client from PluginManager entries
     const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
     let toolClient: NativeToolClient | null = null;
-    if (getPropolis()) {
-      toolClient = new NativeToolClient(ctx.workDir, ctx.guard, ctx.verbose, toolFilter);
+    if (ctx.pluginManager?.hasToolEntries()) {
+      toolClient = new NativeToolClient(ctx.pluginManager.getToolEntries(), toolFilter);
     }
 
     // Build agent config
@@ -149,11 +150,11 @@ export class AgentPool {
     };
     const runtime = new DirectRuntime(runtimeConfig);
 
-    // Create tool client (optional — only if propolis available)
+    // Create tool client from PluginManager entries (if available)
     const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
     let toolClient: ToolClient | null = null;
-    if (getPropolis()) {
-      toolClient = new NativeToolClient(ctx.workDir, ctx.guard, ctx.verbose, toolFilter);
+    if (ctx.pluginManager?.hasToolEntries()) {
+      toolClient = new NativeToolClient(ctx.pluginManager.getToolEntries(), toolFilter);
     }
 
     // Build mock agent config

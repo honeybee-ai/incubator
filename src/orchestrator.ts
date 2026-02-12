@@ -8,7 +8,7 @@ import type { NamespaceRegistry } from './namespaces.js';
 import type { DanceModule } from './dances.js';
 import { AgentPool, type PoolContext } from './agent-pool.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
-import { getPropolis } from './tool-loader.js';
+import type { PluginManager } from './plugins/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Path to the bundled Claude Code ACP plugin (shipped with incubator). */
@@ -95,6 +95,7 @@ export class BroodOrchestrator {
     private registry?: NamespaceRegistry,
     private danceModule?: DanceModule,
     private telemetry?: TelemetryReporter,
+    private pluginManager?: PluginManager,
   ) {}
 
   private log(msg: string): void {
@@ -195,6 +196,7 @@ export class BroodOrchestrator {
         provider: config.provider,
         models: config.models,
         telemetry: this.telemetry,
+        pluginManager: this.pluginManager,
       };
     }
 
@@ -562,10 +564,9 @@ export class BroodOrchestrator {
     this.children.clear();
     this.childInfo = [];
 
-    // Clean up PTY sessions if propolis was loaded
-    const propolisModule = getPropolis();
-    if (propolisModule) {
-      propolisModule.destroyAllPtySessions();
+    // Clean up plugin resources (PTY sessions, temp files, etc.)
+    if (this.pluginManager) {
+      await this.pluginManager.destroyAll();
     }
   }
 }

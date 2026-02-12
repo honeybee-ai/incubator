@@ -1,38 +1,28 @@
 import type { ToolClient } from './tool-client.js';
 import type { ToolDef } from './types.js';
-import type { Guard } from '../propolis/guard.js';
-import { getPropolis } from '../tool-loader.js';
+import type { ToolEntry } from '@honeybee-ai/hivemind-sdk/integrations';
 
 /**
- * In-process tool client — runs Propolis tool handlers directly.
+ * In-process tool client — runs tool handlers directly.
  * No MCP overhead, no child process. Used in Worker mode.
  *
- * Requires @honeybee-ai/propolis to be loaded via loadPropolis() first.
- * If propolis is not available, constructor throws.
+ * Accepts ToolEntry[] from PluginManager.
  */
 export class NativeToolClient implements ToolClient {
   private entryMap: Map<string, { handler: (args: Record<string, unknown>) => Promise<any> }>;
   private _defs: ToolDef[];
 
-  constructor(workDir: string, guard: Guard | null, verbose?: boolean, toolFilter?: string[] | null) {
-    const propolis = getPropolis();
-    if (!propolis) {
-      throw new Error(
-        'NativeToolClient requires @honeybee-ai/propolis. ' +
-        'Install it with: pnpm add @honeybee-ai/propolis'
-      );
-    }
-
-    let entries = propolis.TOOL_DEFS(workDir, guard, verbose);
+  constructor(entries: ToolEntry[], toolFilter?: string[] | null) {
+    let filtered = entries;
 
     // Filter tools if whitelist provided
     if (toolFilter) {
       const filterSet = new Set(toolFilter);
-      entries = entries.filter(e => filterSet.has(e.def.function.name));
+      filtered = entries.filter(e => filterSet.has(e.def.function.name));
     }
 
-    this.entryMap = new Map(entries.map(e => [e.def.function.name, e]));
-    this._defs = entries.map(e => e.def as unknown as ToolDef);
+    this.entryMap = new Map(filtered.map(e => [e.def.function.name, e]));
+    this._defs = filtered.map(e => e.def as unknown as ToolDef);
   }
 
   getToolDefs(): ToolDef[] {

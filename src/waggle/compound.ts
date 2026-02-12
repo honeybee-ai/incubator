@@ -3,33 +3,22 @@ import type {
   WaitSpec, NormalizedWait, AcpBackend, Primitives,
 } from './types.js';
 import type { ToolResult } from '../propolis/tools/types.js';
-import type { Guard } from '../propolis/guard.js';
-import { getPropolis } from '../tool-loader.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
+import type { PluginManager } from '../plugins/index.js';
 
 // ─── Handler map ────────────────────────────────────────────────────
 
 type EnvHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
 
-/** Build env handler map from propolis TOOL_DEFS (if available). */
-export function createHandlerMap(
-  workDir: string,
-  guard: Guard | null,
-  verbose?: boolean,
-): Map<string, EnvHandler> {
-  const propolis = getPropolis();
-  if (!propolis) {
-    // Propolis not available — no env tools
-    return new Map();
-  }
-  const entries = propolis.TOOL_DEFS(workDir, guard, verbose);
-  return new Map(entries.map(e => [e.def.function.name, e.handler]));
+/** Build env handler map from PluginManager (replaces propolis-direct loading). */
+export function createHandlerMap(pluginManager: PluginManager): Map<string, EnvHandler> {
+  return pluginManager.getHandlerMap();
 }
 
 // ─── Context ────────────────────────────────────────────────────────
 
 export interface CompoundContext {
-  /** Map of propolis handler name → handler function. */
+  /** Map of handler name → handler function (from PluginManager). */
   handlers: Map<string, EnvHandler>;
   /** ACP backend for coordination ops (null = no coordination). */
   acp?: AcpBackend | null;
@@ -37,6 +26,8 @@ export interface CompoundContext {
   primitives?: Primitives | null;
   /** Telemetry reporter (optional). */
   telemetry?: TelemetryReporter;
+  /** Dynamic env action names (from PluginManager). Falls back to DEFAULT_ENV_ACTIONS. */
+  envActions?: Set<string>;
 }
 
 // ─── Action name mapping ────────────────────────────────────────────
@@ -50,8 +41,12 @@ const ENV_ACTION_MAP: Record<string, string> = {
 /** ACP coordination primitives. */
 const ACP_ACTIONS = new Set(['publish', 'claim', 'release', 'get_state', 'set_state']);
 
-/** All known env action names (waggle names, not handler names). */
-const ENV_ACTIONS = new Set([
+/**
+ * All known env action names.
+ * Populated dynamically from PluginManager, plus waggle aliases.
+ * Falls back to the classic set when no PluginManager is wired.
+ */
+const DEFAULT_ENV_ACTIONS = new Set([
   'read_file', 'write_file', 'patch_file', 'list_files', 'glob', 'grep',
   'shell', 'git_status', 'git_diff', 'git_commit', 'git_log',
   'fetch', 'scrape',
@@ -81,6 +76,8 @@ export async function compoundHandler(
 ): Promise<WaggleResult> {
   const results: OpResult[] = [];
 
+  const envActions = ctx.envActions ?? DEFAULT_ENV_ACTIONS;
+
   // Execute ops sequentially
   for (const op of input.dance) {
     const action = op.do;
@@ -95,13 +92,13 @@ export async function compoundHandler(
       const result = await executeAcpOp(op, ctx.acp);
       ctx.telemetry?.record('tool_call', { action, success: result.ok, latency_ms: Date.now() - opStart });
       results.push(result);
-    } else if (ENV_ACTIONS.has(action) || ctx.handlers.has(action) || ctx.handlers.has(ENV_ACTION_MAP[action] ?? '')) {
+    } else if (envActions.has(action) || ctx.handlers.has(action) || ctx.handlers.has(ENV_ACTION_MAP[action] ?? '')) {
       // Check env primitive filtering
       if (ctx.primitives?.env && !ctx.primitives.env.includes(action)) {
         results.push({ op: action, ok: false, error: `action '${action}' not permitted for this role` });
         continue;
       }
-      const result = await executeEnvOp(op, ctx.handlers);
+      const result = await executeEnvOp(op, ctx.handlers, envActions);
       ctx.telemetry?.record('tool_call', { action, success: result.ok, latency_ms: Date.now() - opStart });
       results.push(result);
     } else {
@@ -143,13 +140,14 @@ export async function compoundHandler(
 async function executeEnvOp(
   op: Operation,
   handlers: Map<string, EnvHandler>,
+  envActions: Set<string> = DEFAULT_ENV_ACTIONS,
 ): Promise<OpResult> {
   const action = op.do;
   const handlerName = ENV_ACTION_MAP[action] ?? action;
   const handler = handlers.get(handlerName);
 
   if (!handler) {
-    if (ENV_ACTIONS.has(action)) {
+    if (envActions.has(action)) {
       return { op: action, ok: false, error: 'Environment tools not available. Install @honeybee-ai/propolis.' };
     }
     return { op: action, ok: false, error: `unknown action: '${action}'` };

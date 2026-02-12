@@ -76,12 +76,15 @@ export class Agent {
       // Create tool client based on mode
       if (this.config.mode === 'worker') {
         const guard = this.noGuard ? null : loadGuard(this.config.verbose);
-        this.toolClient = new NativeToolClient(
-          this.config.workDir!,
-          guard,
-          this.config.verbose,
-          this.config.toolFilter,
-        );
+        // Load propolis directly (child process context — no PluginManager)
+        let entries: import('@honeybee-ai/hivemind-sdk/integrations').ToolEntry[];
+        try {
+          const propolis = await import('@honeybee-ai/propolis');
+          entries = propolis.TOOL_DEFS(this.config.workDir!, guard, this.config.verbose) as import('@honeybee-ai/hivemind-sdk/integrations').ToolEntry[];
+        } catch {
+          throw new Error('Worker mode requires @honeybee-ai/propolis. Install it with: pnpm add @honeybee-ai/propolis');
+        }
+        this.toolClient = new NativeToolClient(entries, this.config.toolFilter);
       } else {
         // Drone mode — connect via MCP
         const target = this.config.propolisTarget ?? 'stdio:--work-dir=.';

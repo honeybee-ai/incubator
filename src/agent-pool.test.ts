@@ -44,10 +44,23 @@ vi.mock('./propolis/guard.js', () => ({
   loadGuard: vi.fn(() => null),
 }));
 
-// Mock tool-loader so getPropolis() returns truthy (enables NativeToolClient path)
-vi.mock('./tool-loader.js', () => ({
-  getPropolis: vi.fn(() => ({})),
-}));
+/** Create a mock PluginManager that reports tool entries available. */
+function makeMockPluginManager(hasTools = true) {
+  return {
+    hasToolEntries: vi.fn(() => hasTools),
+    getToolEntries: vi.fn(() => hasTools ? [
+      {
+        def: { type: 'function', function: { name: 'read_file', description: 'Read', parameters: { type: 'object', properties: {}, required: [] } } },
+        schema: {},
+        handler: vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] })),
+      },
+    ] : []),
+    getHandlerMap: vi.fn(() => new Map()),
+    getToolNames: vi.fn(() => new Set(['read_file'])),
+    getLoadedNames: vi.fn(() => ['propolis']),
+    destroyAll: vi.fn(async () => {}),
+  };
+}
 
 function makePoolContext(overrides?: Partial<PoolContext>): PoolContext {
   const bus = new LocalBus();
@@ -64,6 +77,7 @@ function makePoolContext(overrides?: Partial<PoolContext>): PoolContext {
     guard: null,
     verbose: false,
     provider: 'ollama/qwen3:8b',
+    pluginManager: makeMockPluginManager() as any,
     ...overrides,
   };
 }
@@ -170,12 +184,29 @@ describe('AgentPool', () => {
 
     await pool.startAgent({ role: 'reader', tools: ['read_file', 'list_dir'] }, ctx);
 
-    // NativeToolClient should have been called with tool filter
+    // NativeToolClient should have been called with entries + filter
     expect(NativeToolClient).toHaveBeenCalledWith(
-      '/tmp/test',
-      null,
-      false,
+      expect.any(Array),
       ['read_file', 'list_dir'],
     );
+  });
+
+  it('uses NullToolClient when no plugin manager', async () => {
+    const pool = new AgentPool();
+    const ctx = makePoolContext({ pluginManager: undefined });
+
+    const agentId = await pool.startAgent({ role: 'writer' }, ctx);
+    expect(agentId).toMatch(/^writer_/);
+  });
+
+  it('uses NullToolClient when plugin manager has no tools', async () => {
+    const pool = new AgentPool();
+    const ctx = makePoolContext({ pluginManager: makeMockPluginManager(false) as any });
+
+    const { NativeToolClient } = await import('./agent/native-client.js');
+    const agentId = await pool.startAgent({ role: 'writer' }, ctx);
+    expect(agentId).toMatch(/^writer_/);
+    // NativeToolClient should NOT have been called (falls through to NullToolClient)
+    expect(NativeToolClient).not.toHaveBeenCalled();
   });
 });

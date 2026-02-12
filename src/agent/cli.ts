@@ -237,7 +237,16 @@ async function main() {
   let toolClient: ToolClient;
   if (mode === 'worker') {
     const guard = noGuard ? null : loadGuard(verbose);
-    toolClient = new NativeToolClient(workDir, guard, verbose, toolFilter);
+    // Load propolis directly (child process context — no PluginManager)
+    let entries: import('@honeybee-ai/hivemind-sdk/integrations').ToolEntry[];
+    try {
+      const propolis = await import('@honeybee-ai/propolis');
+      entries = propolis.TOOL_DEFS(workDir, guard, verbose) as import('@honeybee-ai/hivemind-sdk/integrations').ToolEntry[];
+    } catch {
+      console.error('[hive] ERROR: Worker mode requires @honeybee-ai/propolis');
+      process.exit(1);
+    }
+    toolClient = new NativeToolClient(entries, toolFilter);
     const toolCount = toolClient.getToolDefs().length;
     console.error(`[hive] Tools:      ${toolCount} (in-process)`);
   } else {

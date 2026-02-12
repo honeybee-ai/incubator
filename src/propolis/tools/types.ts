@@ -1,13 +1,15 @@
-/** MCP tool result format. Kept in incubator for backward compatibility. */
-export interface ToolResult {
-  [key: string]: unknown;
-  content: Array<{ type: 'text'; text: string }>;
-}
+/**
+ * Re-export canonical tool types from SDK.
+ * Kept for backward compatibility — internal code imports from here.
+ */
+export type { ToolResult } from '@honeybee-ai/hivemind-sdk/integrations';
 
-export function textResult(data: unknown): ToolResult {
+/** Helper: wrap data as a ToolResult. */
+export function textResult(data: unknown): import('@honeybee-ai/hivemind-sdk/integrations').ToolResult {
   return { content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] };
 }
 
-export function errorResult(msg: string): ToolResult {
+/** Helper: wrap error message as a ToolResult. */
+export function errorResult(msg: string): import('@honeybee-ai/hivemind-sdk/integrations').ToolResult {
   return textResult({ error: msg });
 }

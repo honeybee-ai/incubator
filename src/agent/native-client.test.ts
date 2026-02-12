@@ -1,72 +1,105 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NativeToolClient } from './native-client.js';
-import { _resetPropolisLoader } from '../tool-loader.js';
+import type { ToolEntry } from '@honeybee-ai/hivemind-sdk/integrations';
 
-// NativeToolClient now delegates to @honeybee-ai/propolis.
-// The full tool surface is tested in the propolis package.
-// Here we test the incubator wrapper behavior.
+// Mock tool entries (propolis-shaped)
+function makeMockEntries(): ToolEntry[] {
+  return [
+    {
+      def: {
+        type: 'function',
+        function: {
+          name: 'read_file',
+          description: 'Read a file',
+          parameters: { type: 'object', properties: { path: { type: 'string', description: 'path' } }, required: ['path'] },
+        },
+      },
+      schema: {},
+      handler: vi.fn(async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: `read: ${args.path}` }],
+      })),
+    },
+    {
+      def: {
+        type: 'function',
+        function: {
+          name: 'write_file',
+          description: 'Write a file',
+          parameters: { type: 'object', properties: { path: { type: 'string', description: 'path' }, content: { type: 'string', description: 'content' } }, required: ['path', 'content'] },
+        },
+      },
+      schema: {},
+      handler: vi.fn(async () => ({
+        content: [{ type: 'text' as const, text: 'ok' }],
+      })),
+    },
+    {
+      def: {
+        type: 'function',
+        function: {
+          name: 'run',
+          description: 'Execute shell command',
+          parameters: { type: 'object', properties: { command: { type: 'string', description: 'cmd' } }, required: ['command'] },
+        },
+      },
+      schema: {},
+      handler: vi.fn(async () => ({
+        content: [{ type: 'text' as const, text: 'done' }],
+      })),
+    },
+  ];
+}
 
-describe('NativeToolClient (incubator wrapper)', () => {
-  beforeEach(() => {
-    _resetPropolisLoader();
-  });
-
-  afterEach(() => {
-    _resetPropolisLoader();
-    vi.restoreAllMocks();
-  });
-
-  it('throws when propolis is not loaded', () => {
-    expect(() => new NativeToolClient('/tmp', null)).toThrow('propolis');
-  });
-
-  it('works after loadPropolis()', async () => {
-    const { loadPropolis } = await import('../tool-loader.js');
-    const loaded = await loadPropolis();
-
-    if (!loaded) {
-      // propolis not installed as dep — skip gracefully
-      console.log('Skipping: propolis not available');
-      return;
-    }
-
-    const client = new NativeToolClient('/tmp', null);
-    const defs = client.getToolDefs();
-    // propolis exposes 18 tools (13 env + 5 PTY)
-    expect(defs.length).toBe(18);
+describe('NativeToolClient', () => {
+  it('creates from ToolEntry array', () => {
+    const entries = makeMockEntries();
+    const client = new NativeToolClient(entries);
+    expect(client.getToolDefs().length).toBe(3);
     expect(client.hasToolName('read_file')).toBe(true);
-    expect(client.hasToolName('pty_spawn')).toBe(true);
+    expect(client.hasToolName('write_file')).toBe(true);
+    expect(client.hasToolName('run')).toBe(true);
     expect(client.hasToolName('nonexistent')).toBe(false);
   });
 
-  it('filters tools when propolis is loaded', async () => {
-    const { loadPropolis } = await import('../tool-loader.js');
-    const loaded = await loadPropolis();
-    if (!loaded) return;
-
-    const client = new NativeToolClient('/tmp', null, false, ['read_file', 'write_file']);
+  it('filters tools via whitelist', () => {
+    const entries = makeMockEntries();
+    const client = new NativeToolClient(entries, ['read_file', 'write_file']);
     expect(client.getToolDefs().length).toBe(2);
     expect(client.hasToolName('read_file')).toBe(true);
     expect(client.hasToolName('run')).toBe(false);
   });
 
-  it('callTool returns error for unknown tool', async () => {
-    const { loadPropolis } = await import('../tool-loader.js');
-    const loaded = await loadPropolis();
-    if (!loaded) return;
+  it('null filter means no filtering', () => {
+    const entries = makeMockEntries();
+    const client = new NativeToolClient(entries, null);
+    expect(client.getToolDefs().length).toBe(3);
+  });
 
-    const client = new NativeToolClient('/tmp', null);
+  it('callTool invokes handler and unwraps ToolResult', async () => {
+    const entries = makeMockEntries();
+    const client = new NativeToolClient(entries);
+    const result = await client.callTool('read_file', { path: 'test.txt' });
+    expect(result).toBe('read: test.txt');
+    expect(entries[0].handler).toHaveBeenCalledWith({ path: 'test.txt' });
+  });
+
+  it('callTool returns error for unknown tool', async () => {
+    const entries = makeMockEntries();
+    const client = new NativeToolClient(entries);
     const result = await client.callTool('nonexistent', {});
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain('Unknown tool');
   });
 
   it('close is a no-op', async () => {
-    const { loadPropolis } = await import('../tool-loader.js');
-    const loaded = await loadPropolis();
-    if (!loaded) return;
-
-    const client = new NativeToolClient('/tmp', null);
+    const entries = makeMockEntries();
+    const client = new NativeToolClient(entries);
     await client.close(); // Should not throw
+  });
+
+  it('works with empty entries array', () => {
+    const client = new NativeToolClient([]);
+    expect(client.getToolDefs().length).toBe(0);
+    expect(client.hasToolName('anything')).toBe(false);
   });
 });

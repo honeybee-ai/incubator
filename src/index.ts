@@ -20,7 +20,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import yaml from 'js-yaml';
 import type { BackendConfig } from './stores/backend.js';
 import type { Redis } from './stores/redis/db.js';
-import { IntegrationManager, loadIntegrationsConfig } from './integrations/index.js';
+import { loadIntegrationsConfig } from './integrations/index.js';
+import { PluginManager } from './plugins/index.js';
 import type { TopicRouterOptions } from './honeycomb.js';
 import type { HoneycombTransport } from './transports/types.js';
 import { RunWatcher } from './run-watcher.js';
@@ -495,7 +496,7 @@ export async function main() {
             env: broodEnv,
             agents: broodAgents,
           };
-          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module, telemetry);
+          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager);
           orch.start().catch(err => {
             console.error(`[orchestrator] Spawn failed: ${(err as Error).message}`);
           });
@@ -513,50 +514,46 @@ export async function main() {
       });
     }
 
-    // Load integrations
-    let integrationManager: IntegrationManager | undefined;
-    if (loadIntegrations) {
-      const defaultStores = registry.get('default');
-      integrationManager = new IntegrationManager({
-        namespace: 'default',
-        bus,
-        eventStore: defaultStores.events,
-        verbose,
-      });
+    // Initialize plugin system (replaces IntegrationManager + tool-loader)
+    const defaultStoresForPlugins = registry.get('default');
+    const pluginManager = new PluginManager({
+      verbose,
+      namespace: 'default',
+      bus,
+      eventStore: defaultStoresForPlugins.events,
+    });
 
-      const config = loadIntegrationsConfig();
-      if (cliIntegrations.length > 0) {
-        // Load only CLI-specified integrations (must be in config or treated as package names)
-        for (const name of cliIntegrations) {
-          const entry = config[name];
-          if (entry) {
-            try {
-              await integrationManager.load(name, entry.package, entry.config);
-            } catch (err) {
-              console.error(`[integrations] Failed to load "${name}": ${(err as Error).message}`);
-            }
-          } else {
-            // Treat name as npm package name directly
-            try {
-              await integrationManager.load(name, name);
-            } catch (err) {
-              console.error(`[integrations] Failed to load "${name}": ${(err as Error).message}`);
-            }
-          }
+    // Extract brood plugins (if brood.yaml has a plugins: section)
+    let broodPlugins: import('./plugins/index.js').BroodPluginEntry[] | undefined;
+    if (broodPath) {
+      try {
+        const broodPeekRaw = readFileSync(resolvePath(broodPath), 'utf-8');
+        const broodPeek = (broodPath.endsWith('.json') ? JSON.parse(broodPeekRaw) : yaml.load(broodPeekRaw)) as Record<string, unknown>;
+        if (Array.isArray(broodPeek.plugins)) {
+          broodPlugins = (broodPeek.plugins as Array<Record<string, unknown>>).map(p => ({
+            package: String(p.package ?? ''),
+            config: (p.config as Record<string, string>) ?? undefined,
+          })).filter(p => p.package);
         }
-      } else {
-        // Load all enabled integrations from config
-        await integrationManager.loadFromConfig(config);
-      }
+      } catch { /* brood parse will fail properly later */ }
+    }
 
-      const loaded = integrationManager.getLoadedNames();
-      if (loaded.length > 0) {
-        console.error(`[incubator] Integrations: ${loaded.join(', ')}`);
-        const tools = integrationManager.getTools();
-        if (tools.length > 0) {
-          console.error(`[incubator] Integration tools: ${tools.map(t => t.name).join(', ')}`);
-        }
-      }
+    // Build integration config for plugins
+    const intConfig = loadIntegrations ? loadIntegrationsConfig() : {};
+    await pluginManager.init({
+      autoDiscover: true,
+      broodPlugins,
+      integrations: loadIntegrations ? intConfig : undefined,
+      cliIntegrations: cliIntegrations.length > 0 ? cliIntegrations : undefined,
+    });
+
+    // Build tool entries for the working directory
+    pluginManager.buildToolEntries(process.cwd(), carapaceGuard ?? null, verbose);
+
+    const loadedPlugins = pluginManager.getLoadedNames();
+    if (loadedPlugins.length > 0) {
+      const toolCount = pluginManager.getToolCount();
+      console.error(`[incubator] Plugins:      ${loadedPlugins.join(', ')} (${toolCount} tools)`);
     }
 
     // Create telemetry reporter (local-first, cloud opt-in via env vars)
@@ -598,7 +595,7 @@ export async function main() {
         orchestrator = new BroodOrchestrator(
           agentsConfig, port, bus,
           defaultStoresForWatcher.runs, verbose,
-          defaultStoresForWatcher, registry, danceSupport?.module, telemetry,
+          defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager,
         );
         orchestrator.start().catch(err => {
           console.error(`[orchestrator] Fatal: ${(err as Error).message}`);
@@ -617,7 +614,7 @@ export async function main() {
       if (telemetry) await telemetry.stop();
       runWatcher.stop();
       webhookManager.close();
-      if (integrationManager) await integrationManager.stopAll();
+      await pluginManager.destroyAll();
       if (wsManager) wsManager.close();
       await bus.close();
       if (persistPath && !skipPersistence) {

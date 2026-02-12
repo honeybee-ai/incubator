@@ -91,7 +91,7 @@
     "@anthropic-ai/sdk": "^0.74.0",
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
     "@honeybee-ai/carapace": "^1.0.1",
-    "@honeybee-ai/hivemind-sdk": "^0.2.1",
+    "@honeybee-ai/hivemind-sdk": "^0.2.6",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "groq-sdk": "^0.37.0",
     "js-yaml": "^4.1.1",
@@ -113,7 +113,7 @@
   },
   "optionalDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",
-    "@honeybee-ai/propolis": "link:../propolis",
+    "@honeybee-ai/propolis": "^0.1.0",
     "better-sqlite3": "^12.6.2",
     "ioredis": "^5.9.2",
     "sirv": "^3.0.0",
