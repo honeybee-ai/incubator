@@ -1,4 +1,4 @@
-/** MCP tool result format. */
+/** MCP tool result format. Kept in incubator for backward compatibility. */
 export interface ToolResult {
   [key: string]: unknown;
   content: Array<{ type: 'text'; text: string }>;

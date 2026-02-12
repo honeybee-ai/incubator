@@ -1,19 +1,29 @@
 import type { ToolClient } from './tool-client.js';
 import type { ToolDef } from './types.js';
 import type { Guard } from '../propolis/guard.js';
-import { TOOL_DEFS, type ToolEntry } from '../propolis/tools/defs.js';
+import { getPropolis } from '../tool-loader.js';
 
 /**
  * In-process tool client — runs Propolis tool handlers directly.
  * No MCP overhead, no child process. Used in Worker mode.
+ *
+ * Requires @honeybee-ai/propolis to be loaded via loadPropolis() first.
+ * If propolis is not available, constructor throws.
  */
 export class NativeToolClient implements ToolClient {
-  private entries: ToolEntry[];
-  private entryMap: Map<string, ToolEntry>;
-  private defs: ToolDef[];
+  private entryMap: Map<string, { handler: (args: Record<string, unknown>) => Promise<any> }>;
+  private _defs: ToolDef[];
 
   constructor(workDir: string, guard: Guard | null, verbose?: boolean, toolFilter?: string[] | null) {
-    let entries = TOOL_DEFS(workDir, guard, verbose);
+    const propolis = getPropolis();
+    if (!propolis) {
+      throw new Error(
+        'NativeToolClient requires @honeybee-ai/propolis. ' +
+        'Install it with: pnpm add @honeybee-ai/propolis'
+      );
+    }
+
+    let entries = propolis.TOOL_DEFS(workDir, guard, verbose);
 
     // Filter tools if whitelist provided
     if (toolFilter) {
@@ -21,13 +31,12 @@ export class NativeToolClient implements ToolClient {
       entries = entries.filter(e => filterSet.has(e.def.function.name));
     }
 
-    this.entries = entries;
     this.entryMap = new Map(entries.map(e => [e.def.function.name, e]));
-    this.defs = entries.map(e => e.def);
+    this._defs = entries.map(e => e.def as unknown as ToolDef);
   }
 
   getToolDefs(): ToolDef[] {
-    return this.defs;
+    return this._defs;
   }
 
   hasToolName(name: string): boolean {
@@ -43,9 +52,8 @@ export class NativeToolClient implements ToolClient {
     const result = await entry.handler(args);
 
     // Unwrap ToolResult { content: [{ text }] } → string
-    // Same transform McpToolClient does over the wire
     if (result.content && result.content.length > 0) {
-      return result.content.map(c => c.text ?? '').join('\n');
+      return result.content.map((c: { text?: string }) => c.text ?? '').join('\n');
     }
     return JSON.stringify(result);
   }

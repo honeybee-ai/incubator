@@ -8,16 +8,29 @@ import type { NamespaceRegistry } from './namespaces.js';
 import type { DanceModule } from './dances.js';
 import { AgentPool, type PoolContext } from './agent-pool.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
+import { getPropolis } from './tool-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Path to the bundled Claude Code ACP plugin (shipped with incubator). */
 const PLUGIN_DIR = join(__dirname, '..', 'plugin');
 
+export interface MockAction {
+  tool: string;
+  args: Record<string, unknown>;
+  response?: string;
+}
+
+export interface MockBehavior {
+  actions: MockAction[];
+  maxIterations?: number;
+  iterationDelay?: number;
+}
+
 export interface AgentSpec {
   role: string;
   count?: number;
-  /** 'worker' = in-process tools (default), 'drone' = MCP tools, 'claude' = Claude Code instance */
-  type?: 'worker' | 'drone' | 'claude';
+  /** 'worker' = in-process tools (default), 'drone' = MCP tools, 'claude' = Claude Code instance, 'mock' = scripted test agent */
+  type?: 'worker' | 'drone' | 'claude' | 'mock';
   tools?: string[] | 'all';
   coordination?: string | string[];
   modelHint?: string | null;
@@ -27,6 +40,8 @@ export interface AgentSpec {
   pluginDir?: string | null;
   startOn?: { conditions: Array<{ event: string; count: number }>; timeout: number } | null;
   wakeOn?: { types?: string[] | null; timeout?: number; maxWakes?: number } | null;
+  /** Mock behavior for type: 'mock' agents. */
+  mock?: MockBehavior | null;
 }
 
 export interface AgentsConfig {
@@ -193,6 +208,20 @@ export class BroodOrchestrator {
           await sleep(staggerMs);
         }
         agentIndex++;
+
+        if (agentType === 'mock') {
+          if (this.pool && poolCtx) {
+            const agentId = await this.pool.startMockAgent(agent, agent.mock ?? { actions: [] }, poolCtx);
+            this.childInfo.push({ agentId, role: agent.role, type: 'worker', inProcess: true });
+            this.telemetry?.record('agent_spawn', {
+              agentId, role: agent.role, type: 'mock', inProcess: true,
+            });
+            this.log(`Mock ${agentId} (${agent.role}) started in-process`);
+          } else {
+            this.log(`Mock agent ${agent.role} skipped — no in-process pool available`);
+          }
+          continue;
+        }
 
         if (agentType === 'claude') {
           const suffix = randomBytes(3).toString('hex');
@@ -524,14 +553,20 @@ export class BroodOrchestrator {
 
     // Small delay for agents to clean up, then kill propolis
     await sleep(500);
-    const propolis = this.children.get('propolis');
-    if (propolis) {
-      propolis.kill('SIGTERM');
+    const propolisChild = this.children.get('propolis');
+    if (propolisChild) {
+      propolisChild.kill('SIGTERM');
       this.log('Stopped propolis');
     }
 
     this.children.clear();
     this.childInfo = [];
+
+    // Clean up PTY sessions if propolis was loaded
+    const propolisModule = getPropolis();
+    if (propolisModule) {
+      propolisModule.destroyAllPtySessions();
+    }
   }
 }
 

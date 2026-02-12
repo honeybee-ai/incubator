@@ -44,6 +44,11 @@ vi.mock('./propolis/guard.js', () => ({
   loadGuard: vi.fn(() => null),
 }));
 
+// Mock tool-loader so getPropolis() returns truthy (enables NativeToolClient path)
+vi.mock('./tool-loader.js', () => ({
+  getPropolis: vi.fn(() => ({})),
+}));
+
 function makePoolContext(overrides?: Partial<PoolContext>): PoolContext {
   const bus = new LocalBus();
   const registry = new NamespaceRegistry();

@@ -9,13 +9,24 @@ import type { NamespaceRegistry } from './namespaces.js';
 import type { DanceModule } from './dances.js';
 import type { ProtocolResponse } from './agent/acp/runtime.js';
 import type { AgentResult, AgentConfig } from './agent/types.js';
-import type { AgentSpec } from './orchestrator.js';
+import type { AgentSpec, MockBehavior } from './orchestrator.js';
+import { runMockAgent } from './agent/mock-runner.js';
 import { DirectRuntime, type DirectRuntimeConfig } from './agent/acp/direct-runtime.js';
 import { AgentRunner } from './agent/runner.js';
 import { NativeToolClient } from './agent/native-client.js';
+import type { ToolClient } from './agent/tool-client.js';
+import type { ToolDef } from './agent/types.js';
 import { resolveProvider } from './agent/providers.js';
-import { loadGuard } from './propolis/guard.js';
-import type { Guard } from './propolis/guard.js';
+import { loadGuard, type Guard } from './propolis/guard.js';
+import { getPropolis } from './tool-loader.js';
+
+/** No-op tool client when propolis is not available. */
+class NullToolClient implements ToolClient {
+  getToolDefs(): ToolDef[] { return []; }
+  hasToolName(): boolean { return false; }
+  async callTool(_name: string): Promise<string> { return JSON.stringify({ error: 'No tool client available' }); }
+  async close(): Promise<void> {}
+}
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 
@@ -36,7 +47,7 @@ export interface PoolContext {
 
 interface PoolAgent {
   promise: Promise<AgentResult>;
-  runner: AgentRunner;
+  runner: AgentRunner | null;
   runtime: DirectRuntime;
   agentId: string;
   role: string;
@@ -74,9 +85,12 @@ export class AgentPool {
     };
     const runtime = new DirectRuntime(runtimeConfig);
 
-    // Create tool client
+    // Create tool client (requires propolis)
     const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
-    const toolClient = new NativeToolClient(ctx.workDir, ctx.guard, ctx.verbose, toolFilter);
+    let toolClient: NativeToolClient | null = null;
+    if (getPropolis()) {
+      toolClient = new NativeToolClient(ctx.workDir, ctx.guard, ctx.verbose, toolFilter);
+    }
 
     // Build agent config
     const config: AgentConfig = {
@@ -103,9 +117,10 @@ export class AgentPool {
 
     // Start agent as async loop
     const runner = new AgentRunner();
-    const promise = runner.run(config, toolClient, null, runtime, protocolData, ctx.telemetry).finally(() => {
+    const effectiveToolClient = toolClient ?? new NullToolClient();
+    const promise = runner.run(config, effectiveToolClient, null, runtime, protocolData, ctx.telemetry).finally(() => {
       runtime.disconnect().catch(() => {});
-      toolClient.close().catch(() => {});
+      effectiveToolClient.close().catch(() => {});
     });
 
     this.agents.set(agentId, { promise, runner, runtime, agentId, role: spec.role });
@@ -113,10 +128,62 @@ export class AgentPool {
     return agentId;
   }
 
+  async startMockAgent(spec: AgentSpec, behavior: MockBehavior, ctx: PoolContext): Promise<string> {
+    const suffix = randomBytes(3).toString('hex');
+    const agentId = `${spec.role}_${suffix}`;
+
+    // Build protocol data
+    const protocolData = ctx.protocolData ?? this.buildProtocolData(ctx.registry, ctx.namespace, spec.role);
+
+    // Create DirectRuntime
+    const runtimeConfig: DirectRuntimeConfig = {
+      stores: ctx.stores,
+      bus: ctx.bus,
+      namespace: ctx.namespace,
+      agentId,
+      role: spec.role,
+      maxIterations: behavior.maxIterations ?? behavior.actions.length,
+      verbose: ctx.verbose,
+      danceModule: ctx.danceModule,
+      protocolData: protocolData ?? undefined,
+    };
+    const runtime = new DirectRuntime(runtimeConfig);
+
+    // Create tool client (optional — only if propolis available)
+    const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
+    let toolClient: ToolClient | null = null;
+    if (getPropolis()) {
+      toolClient = new NativeToolClient(ctx.workDir, ctx.guard, ctx.verbose, toolFilter);
+    }
+
+    // Build mock agent config
+    const mockConfig: AgentConfig = {
+      agentId,
+      role: spec.role,
+      provider: { type: 'ollama', baseUrl: '', model: 'mock' },
+      serverUrl: 'direct://localhost',
+      namespace: ctx.namespace,
+      maxIterations: behavior.maxIterations ?? behavior.actions.length,
+      verbose: ctx.verbose,
+      mode: 'worker',
+      workDir: ctx.workDir,
+      noAcp: false,
+    };
+
+    const promise = runMockAgent(behavior, mockConfig, toolClient, runtime, ctx.telemetry).finally(() => {
+      runtime.disconnect().catch(() => {});
+      toolClient?.close().catch(() => {});
+    });
+
+    this.agents.set(agentId, { promise, runner: null, runtime, agentId, role: spec.role });
+
+    return agentId;
+  }
+
   async killAgent(agentId: string, telemetry?: { record(type: string, meta: Record<string, unknown>): void }): Promise<void> {
     const agent = this.agents.get(agentId);
     if (!agent) return;
-    agent.runner.stop();
+    agent.runner?.stop();
     telemetry?.record('agent_kill', { agentId, reason: 'pool_kill' });
     // Wait briefly for cleanup
     try {
@@ -128,7 +195,7 @@ export class AgentPool {
   async shutdown(telemetry?: { record(type: string, meta: Record<string, unknown>): void }): Promise<void> {
     telemetry?.record('pool_shutdown', { agentCount: this.agents.size });
     for (const agent of this.agents.values()) {
-      agent.runner.stop();
+      agent.runner?.stop();
     }
     // Wait for all agents to finish (with timeout)
     const promises = [...this.agents.values()].map(a => a.promise.catch(() => {}));

@@ -4,20 +4,25 @@ import type {
 } from './types.js';
 import type { ToolResult } from '../propolis/tools/types.js';
 import type { Guard } from '../propolis/guard.js';
-import { TOOL_DEFS } from '../propolis/tools/defs.js';
+import { getPropolis } from '../tool-loader.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 
 // ─── Handler map ────────────────────────────────────────────────────
 
 type EnvHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
 
-/** Build env handler map from propolis TOOL_DEFS. */
+/** Build env handler map from propolis TOOL_DEFS (if available). */
 export function createHandlerMap(
   workDir: string,
   guard: Guard | null,
   verbose?: boolean,
 ): Map<string, EnvHandler> {
-  const entries = TOOL_DEFS(workDir, guard, verbose);
+  const propolis = getPropolis();
+  if (!propolis) {
+    // Propolis not available — no env tools
+    return new Map();
+  }
+  const entries = propolis.TOOL_DEFS(workDir, guard, verbose);
   return new Map(entries.map(e => [e.def.function.name, e.handler]));
 }
 
@@ -50,6 +55,7 @@ const ENV_ACTIONS = new Set([
   'read_file', 'write_file', 'patch_file', 'list_files', 'glob', 'grep',
   'shell', 'git_status', 'git_diff', 'git_commit', 'git_log',
   'fetch', 'scrape',
+  'pty_spawn', 'pty_send', 'pty_read', 'pty_resize', 'pty_close',
 ]);
 
 // ─── Wait normalization ─────────────────────────────────────────────
@@ -143,6 +149,9 @@ async function executeEnvOp(
   const handler = handlers.get(handlerName);
 
   if (!handler) {
+    if (ENV_ACTIONS.has(action)) {
+      return { op: action, ok: false, error: 'Environment tools not available. Install @honeybee-ai/propolis.' };
+    }
     return { op: action, ok: false, error: `unknown action: '${action}'` };
   }
 
