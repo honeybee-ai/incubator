@@ -172,7 +172,7 @@ export class PluginManager {
           namespace: this.namespace,
           timestamp: Date.now(),
         };
-        plugin.onEvent!(integrationEvent).catch((err) => {
+        plugin.onEvent!(integrationEvent).catch((err: unknown) => {
           console.error(`[plugins:${plugin.name}] onEvent error: ${(err as Error).message}`);
         });
       });
