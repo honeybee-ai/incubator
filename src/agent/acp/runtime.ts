@@ -316,6 +316,20 @@ export class AcpRuntime {
   }
 
   /**
+   * Load an ACP protocol spec at runtime (YAML or JSON string).
+   * Sends to incubator via PUT /api/protocol.
+   */
+  async loadProtocol(spec: string): Promise<string> {
+    try {
+      const res = await this.client.loadProtocol({ spec });
+      if (!res.ok) return JSON.stringify({ error: `Failed to load protocol: ${res.status}` });
+      return JSON.stringify(res.data);
+    } catch (err) {
+      return JSON.stringify({ error: `loadProtocol failed: ${(err as Error).message}` });
+    }
+  }
+
+  /**
    * Check halt/pause status.
    */
   async checkControl(): Promise<ControlStatus> {

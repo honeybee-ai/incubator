@@ -34,9 +34,13 @@ export interface WsManager {
 const PING_INTERVAL = 30_000;
 
 async function loadWebSocketServer(): Promise<new (opts: { noServer: true }) => WebSocketServerLike> {
-  const wsModule = await import('ws');
-  const ws = (wsModule.default ?? wsModule) as unknown as { WebSocketServer: new (opts: { noServer: true }) => WebSocketServerLike };
-  return ws.WebSocketServer;
+  const wsModule = await import('ws') as unknown as Record<string, unknown>;
+  // ws@8+ ESM: named export 'WebSocketServer' is the server class.
+  // m.default is the WebSocket client class (not what we need).
+  const Ctor = (wsModule.WebSocketServer ?? (wsModule.default as Record<string, unknown>)?.WebSocketServer) as
+    (new (opts: { noServer: true }) => WebSocketServerLike) | undefined;
+  if (!Ctor) throw new Error('WebSocketServer not found in ws module');
+  return Ctor;
 }
 
 export async function setupWebSocket(

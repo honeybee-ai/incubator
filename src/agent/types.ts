@@ -66,6 +66,8 @@ export interface AgentConfig {
   contextWindow?: number;
   /** Custom prompt injected as the initial user message. */
   prompt?: string | null;
+  /** Number of peer agents (for bootstrap negotiation when no protocol is loaded). */
+  peerCount?: number;
 }
 
 /** Backwards-compatible alias */

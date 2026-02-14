@@ -1,6 +1,6 @@
 {
   "name": "@honeybee-ai/incubator",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Give your agent swarm shared memory. MCP server + REST API for multi-agent coordination.",
   "type": "module",
   "main": "dist/index.js",

@@ -332,6 +332,68 @@ describe('compoundHandler — wait', () => {
   });
 });
 
+// ─── load_protocol op ──────────────────────────────────────────────
+
+describe('compoundHandler — load_protocol', () => {
+  it('routes load_protocol to ACP backend', async () => {
+    const acp = mockAcp();
+    acp.loadProtocol = vi.fn().mockResolvedValue(JSON.stringify({ loaded: true, name: 'test', title: 'Test' }));
+    const ctx = makeCtx({ acp });
+    const result = await compoundHandler({
+      dance: [{ do: 'load_protocol', spec: 'acp: "0.2"\nname: test\ntitle: Test\nroles:\n  worker:\n    description: works\nphases:\n  main:\n    description: main phase' }],
+    }, ctx);
+    expect(result.results[0].ok).toBe(true);
+    expect(result.results[0].data).toEqual({ loaded: true, name: 'test', title: 'Test' });
+    expect(acp.loadProtocol).toHaveBeenCalled();
+  });
+
+  it('returns error when backend does not support load_protocol', async () => {
+    const acp = mockAcp();
+    // loadProtocol not defined on base mock
+    const ctx = makeCtx({ acp });
+    const result = await compoundHandler({
+      dance: [{ do: 'load_protocol', spec: 'acp: "0.2"\nname: x' }],
+    }, ctx);
+    expect(result.results[0].ok).toBe(false);
+    expect(result.results[0].error).toContain('not supported');
+  });
+
+  it('returns error when no ACP backend', async () => {
+    const ctx = makeCtx();
+    const result = await compoundHandler({
+      dance: [{ do: 'load_protocol', spec: 'anything' }],
+    }, ctx);
+    expect(result.results[0].ok).toBe(false);
+    expect(result.results[0].error).toBe('no ACP backend available');
+  });
+
+  it('propagates backend errors', async () => {
+    const acp = mockAcp();
+    acp.loadProtocol = vi.fn().mockResolvedValue(JSON.stringify({ error: 'Invalid spec: missing phases' }));
+    const ctx = makeCtx({ acp });
+    const result = await compoundHandler({
+      dance: [{ do: 'load_protocol', spec: 'bad yaml' }],
+    }, ctx);
+    expect(result.results[0].ok).toBe(false);
+    expect(result.results[0].error).toContain('Invalid spec');
+  });
+
+  it('can be used in a batch with other ACP ops', async () => {
+    const acp = mockAcp();
+    acp.loadProtocol = vi.fn().mockResolvedValue(JSON.stringify({ loaded: true, name: 'test', title: 'Test' }));
+    const ctx = makeCtx({ acp });
+    const result = await compoundHandler({
+      dance: [
+        { do: 'set_state', key: 'spec_status', value: 'activated' },
+        { do: 'load_protocol', spec: 'acp: "0.2"\nname: test' },
+        { do: 'publish', type: 'spec.activated' },
+      ],
+    }, ctx);
+    expect(result.results).toHaveLength(3);
+    expect(result.results.map(r => r.ok)).toEqual([true, true, true]);
+  });
+});
+
 // ─── Primitive filtering ────────────────────────────────────────────
 
 describe('compoundHandler — primitives', () => {

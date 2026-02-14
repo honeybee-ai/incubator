@@ -39,7 +39,7 @@ const ENV_ACTION_MAP: Record<string, string> = {
 };
 
 /** ACP coordination primitives. */
-const ACP_ACTIONS = new Set(['publish', 'claim', 'release', 'get_state', 'set_state']);
+const ACP_ACTIONS = new Set(['publish', 'claim', 'release', 'get_state', 'set_state', 'load_protocol']);
 
 /**
  * All known env action names.
@@ -212,6 +212,12 @@ async function executeAcpOp(
         break;
       case 'set_state':
         resultStr = await acp.setState(op.key as string, op.value);
+        break;
+      case 'load_protocol':
+        if (!acp.loadProtocol) {
+          return { op: op.do, ok: false, error: 'load_protocol not supported by this backend' };
+        }
+        resultStr = await acp.loadProtocol(op.spec as string);
         break;
       default:
         return { op: op.do, ok: false, error: `unknown ACP action: '${op.do}'` };

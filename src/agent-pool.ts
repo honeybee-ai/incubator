@@ -83,8 +83,13 @@ export class AgentPool {
       verbose: ctx.verbose,
       danceModule: ctx.danceModule,
       protocolData: protocolData ?? undefined,
+      registry: ctx.registry,
     };
     const runtime = new DirectRuntime(runtimeConfig);
+
+    // Query peer count for bootstrap prompt
+    const assignments = await ctx.stores.roles.getAssignments();
+    const peerCount = assignments.length;
 
     // Create tool client from PluginManager entries
     const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
@@ -110,6 +115,7 @@ export class AgentPool {
       startOn: spec.startOn ?? null,
       wakeOn: spec.wakeOn ?? null,
       prompt: spec.prompt,
+      peerCount,
     };
 
     ctx.telemetry?.record('agent_spawn', {
@@ -147,6 +153,7 @@ export class AgentPool {
       verbose: ctx.verbose,
       danceModule: ctx.danceModule,
       protocolData: protocolData ?? undefined,
+      registry: ctx.registry,
     };
     const runtime = new DirectRuntime(runtimeConfig);
 

@@ -14,6 +14,7 @@ import type { WaitSpec } from '../../waggle/types.js';
 import { danceToolDefs, callDanceTool, runInject, buildAcpHelper } from '../../dances.js';
 import { normalizeWait } from '../../waggle/compound.js';
 import { createTypeMatcher } from './event-matcher.js';
+import type { NamespaceRegistry } from '../../namespaces.js';
 
 interface ControlStatus {
   halted: boolean;
@@ -31,6 +32,8 @@ export interface DirectRuntimeConfig {
   verbose?: boolean;
   danceModule?: DanceModule;
   protocolData?: ProtocolResponse;
+  /** Registry for runtime protocol loading. */
+  registry?: NamespaceRegistry;
 }
 
 export class DirectRuntime {
@@ -43,6 +46,7 @@ export class DirectRuntime {
   private verbose: boolean;
   private danceModule?: DanceModule;
   private protocolData?: ProtocolResponse;
+  private registry?: NamespaceRegistry;
   private iterationCount = 0;
   private eventBuffer: string[] = [];
   private unsubscribe?: () => void;
@@ -60,6 +64,7 @@ export class DirectRuntime {
     this.verbose = config.verbose ?? false;
     this.danceModule = config.danceModule;
     this.protocolData = config.protocolData;
+    this.registry = config.registry;
   }
 
   /** Connect — register role and subscribe to bus events. */
@@ -318,6 +323,21 @@ export class DirectRuntime {
       return JSON.stringify({ released: true, resource });
     } catch (err) {
       return JSON.stringify({ error: `releaseResource failed: ${(err as Error).message}` });
+    }
+  }
+
+  /** Load an ACP protocol spec at runtime (YAML or JSON string). */
+  async loadProtocol(spec: string): Promise<string> {
+    if (!this.registry) {
+      return JSON.stringify({ error: 'No registry available for protocol loading' });
+    }
+    try {
+      const { parseSpec } = await import('@agentcoordinationprotocol/spec');
+      const parsed = await parseSpec(spec);
+      this.registry.setProtocol(this.namespace, parsed);
+      return JSON.stringify({ loaded: true, name: parsed.name, title: parsed.title });
+    } catch (err) {
+      return JSON.stringify({ error: `loadProtocol failed: ${(err as Error).message}` });
     }
   }
 

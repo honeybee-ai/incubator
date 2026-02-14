@@ -313,7 +313,7 @@ export class AgentRunner {
 
       const systemPrompt = protocolData
         ? generateSystemPrompt(agentId, role, toolDefs, protocolData, { disableReasoning })
-        : generateFallbackPrompt(agentId, role, toolDefs);
+        : generateSystemPrompt(agentId, role, toolDefs, null, { peerCount: config.peerCount });
 
       // 3. Build initial messages
       const messages: ChatMessage[] = [
