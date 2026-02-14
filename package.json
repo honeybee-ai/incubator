@@ -113,7 +113,6 @@
   },
   "optionalDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",
-    "@honeybee-ai/propolis": "^0.1.0",
     "better-sqlite3": "^12.6.2",
     "ioredis": "^5.9.2",
     "sirv": "^3.0.0",
