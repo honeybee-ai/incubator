@@ -30,6 +30,7 @@ import { WebhookManager } from './webhooks.js';
 import { setLogFormat, setLogLevel, type LogFormat } from './log.js';
 import { createTelemetryFromEnv, type TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 import { SessionStore } from './sessions.js';
+import { TriggerEngine, type TriggerEngineConfig } from './triggers.js';
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {};
@@ -583,6 +584,82 @@ export async function main() {
       // Non-fatal — telemetry must never break the host
     }
 
+    // ─── Trigger Engine ──────────────────────────────────────
+    let triggerEngine: TriggerEngine | undefined;
+    try {
+      const honeycombTriggers = process.env['HONEYCOMB_TRIGGERS'];
+      const honeycombSchedule = process.env['HONEYCOMB_SCHEDULE'];
+      const honeycombCompute = process.env['HONEYCOMB_COMPUTE'];
+      const honeycombRegion = process.env['HONEYCOMB_REGION'];
+
+      const hasTriggers = honeycombTriggers || honeycombSchedule || honeycombCompute;
+      if (hasTriggers) {
+        let parsedOn: Record<string, unknown> | undefined;
+        let parsedSchedule: Record<string, unknown> | undefined;
+
+        if (honeycombTriggers) {
+          try { parsedOn = JSON.parse(honeycombTriggers); } catch {
+            console.error('[incubator] Failed to parse HONEYCOMB_TRIGGERS JSON');
+          }
+        }
+        if (honeycombSchedule) {
+          try { parsedSchedule = JSON.parse(honeycombSchedule); } catch {
+            console.error('[incubator] Failed to parse HONEYCOMB_SCHEDULE JSON');
+          }
+        }
+
+        const triggerConfig: TriggerEngineConfig = {
+          namespace: 'default',
+          on: parsedOn as TriggerEngineConfig['on'],
+          schedule: parsedSchedule as TriggerEngineConfig['schedule'],
+          compute: honeycombCompute,
+          region: honeycombRegion,
+        };
+
+        const triggerStores = registry.get('default');
+        const { buildAcpHelper: buildTriggerAcpHelper } = await import('./dances.js');
+        const triggerAcp = buildTriggerAcpHelper({
+          publishEvent: async (_namespace, type, data, aid) => {
+            const event = await triggerStores.events.publish(type, data ?? {}, aid ?? 'trigger:system');
+            bus.publish('default', event);
+          },
+          claimResource: async (_namespace, resource, aid, ttl) => {
+            const result = await triggerStores.claims.claim(resource, resource, aid, ttl);
+            return result.claim.resource;
+          },
+          releaseResource: async (_namespace, resource) => {
+            await triggerStores.claims.release(resource, 'trigger:system');
+          },
+          setState: async (_namespace, key, value) => {
+            await triggerStores.state.set(key, value, 'trigger:system');
+          },
+        }, 'default', 'trigger:system');
+
+        triggerEngine = new TriggerEngine(triggerConfig, triggerStores, bus, triggerAcp);
+
+        if (danceModule) {
+          triggerEngine.setDanceModule(danceModule);
+        }
+        if (telemetry) {
+          triggerEngine.setTelemetry(telemetry);
+        }
+
+        triggerEngine.start();
+
+        const triggerCount = (parsedOn ? Object.keys(parsedOn).length : 0);
+        const scheduleCount = (parsedSchedule ? Object.keys(parsedSchedule).length : 0);
+        const parts: string[] = [];
+        if (triggerCount > 0) parts.push(`${triggerCount} event trigger${triggerCount !== 1 ? 's' : ''}`);
+        if (scheduleCount > 0) parts.push(`${scheduleCount} schedule${scheduleCount !== 1 ? 's' : ''}`);
+        if (honeycombCompute) parts.push(`compute=${honeycombCompute}`);
+        if (honeycombRegion) parts.push(`region=${honeycombRegion}`);
+        console.error(`[incubator] Triggers:     ${parts.join(', ')}`);
+      }
+    } catch (err) {
+      console.error(`[incubator] Trigger setup failed: ${(err as Error).message}`);
+      // Non-fatal — triggers failing should not bring down the server
+    }
+
     httpServer.listen(port, () => {
       console.error(`[incubator] ${useTls ? 'HTTPS' : 'HTTP'} server listening on port ${port}`);
       console.error(`[incubator] MCP endpoint: ${proto}://localhost:${port}/mcp`);
@@ -615,6 +692,7 @@ export async function main() {
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.error('\n[incubator] Shutting down...');
+      if (triggerEngine) triggerEngine.stop();
       if (orchestrator) await orchestrator.shutdown();
       for (const orch of spawnedOrchestrators) await orch.shutdown();
       if (telemetry) await telemetry.stop();

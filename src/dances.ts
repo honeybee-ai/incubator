@@ -32,9 +32,21 @@ export interface InjectFn {
   (ctx: { state: Record<string, string>; agent: { role: string; agentId: string } }): string;
 }
 
+export interface DanceTriggerDef {
+  description: string;
+  handler: (ctx: TriggerContext) => Promise<void>;
+}
+
+export interface TriggerContext {
+  event: { type: string; data: unknown; publishedBy: string };
+  state: Record<string, string>;
+  acp: DanceAcpHelper;
+}
+
 export interface DanceModule {
   inject?: InjectFn;
   tools: Map<string, DanceToolDef>;
+  triggers?: Map<string, DanceTriggerDef>;
 }
 
 // ─── Loader ────────────────────────────────────────────────────
@@ -47,6 +59,7 @@ export async function loadDances(filePath: string): Promise<DanceModule> {
   const mod = await import(filePath);
   const tools = new Map<string, DanceToolDef>();
   let inject: InjectFn | undefined;
+  let triggers: Map<string, DanceTriggerDef> | undefined;
 
   for (const [name, exp] of Object.entries(mod)) {
     if (name === 'default') continue; // skip default export
@@ -56,6 +69,30 @@ export async function loadDances(filePath: string): Promise<DanceModule> {
         throw new Error(`Dance file: "inject" must be a function, got ${typeof exp}`);
       }
       inject = exp as InjectFn;
+      continue;
+    }
+
+    if (name === 'triggers') {
+      if (!exp || typeof exp !== 'object') {
+        throw new Error('Dance file: "triggers" must be an object');
+      }
+      triggers = new Map<string, DanceTriggerDef>();
+      for (const [tName, tDef] of Object.entries(exp as Record<string, unknown>)) {
+        if (!tDef || typeof tDef !== 'object') {
+          throw new Error(`Dance file: trigger "${tName}" must be an object`);
+        }
+        const t = tDef as Record<string, unknown>;
+        if (typeof t.handler !== 'function') {
+          throw new Error(`Dance file: trigger "${tName}" must have a handler function`);
+        }
+        if (typeof t.description !== 'string') {
+          throw new Error(`Dance file: trigger "${tName}" must have a description string`);
+        }
+        triggers.set(tName, {
+          description: t.description as string,
+          handler: t.handler as DanceTriggerDef['handler'],
+        });
+      }
       continue;
     }
 
@@ -77,7 +114,7 @@ export async function loadDances(filePath: string): Promise<DanceModule> {
     });
   }
 
-  return { inject, tools };
+  return { inject, tools, triggers };
 }
 
 /**
