@@ -441,6 +441,7 @@ export async function main() {
         role: String(a.role ?? ''),
         type: (a.type as 'worker' | 'drone' | 'claude' | undefined) ?? 'worker',
         prompt: typeof a.prompt === 'string' ? a.prompt : undefined,
+        workspace: (a.workspace as 'memfs' | 'real' | undefined),
         wakeOn: a.wake_on ? {
           types: (a.wake_on as Record<string, unknown>).types as string[] | undefined,
           maxWakes: (a.wake_on as Record<string, unknown>).max_wakes as number | undefined,
@@ -461,7 +462,7 @@ export async function main() {
             for (const [roleName, roleDef] of Object.entries(specData.roles)) {
               const count = typeof roleDef.agents === 'number' ? roleDef.agents : 1;
               for (let i = 0; i < count; i++) {
-                broodAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, wakeOn: undefined });
+                broodAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, workspace: undefined, wakeOn: undefined });
               }
             }
             console.error(`[incubator] Derived ${broodAgents.length} agents from spec roles`);

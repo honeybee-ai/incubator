@@ -44,6 +44,8 @@ export interface PoolContext {
   models?: Record<string, string>;
   telemetry?: TelemetryReporter;
   pluginManager?: PluginManager;
+  /** FSBackend for memfs workspace mode (opaque, passed to PluginManager). */
+  fsBackend?: unknown;
 }
 
 interface PoolAgent {
@@ -91,11 +93,18 @@ export class AgentPool {
     const assignments = await ctx.stores.roles.getAssignments();
     const peerCount = assignments.length;
 
-    // Create tool client from PluginManager entries
+    // Create tool client from PluginManager entries.
+    // If fsBackend is provided (memfs mode), rebuild entries with backend injected.
     const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
     let toolClient: NativeToolClient | null = null;
-    if (ctx.pluginManager?.hasToolEntries()) {
-      toolClient = new NativeToolClient(ctx.pluginManager.getToolEntries(), toolFilter);
+    if (ctx.pluginManager?.hasToolEntries() || ctx.fsBackend) {
+      if (ctx.fsBackend && ctx.pluginManager) {
+        // Per-agent tool entries with memfs backend
+        ctx.pluginManager.buildToolEntries(ctx.workDir, ctx.guard, ctx.verbose, ctx.fsBackend);
+      }
+      if (ctx.pluginManager?.hasToolEntries()) {
+        toolClient = new NativeToolClient(ctx.pluginManager.getToolEntries(), toolFilter);
+      }
     }
 
     // Build agent config

@@ -185,8 +185,11 @@ export class PluginManager {
   /**
    * Build tool entries from all plugins for the given context.
    * Must be called after init() and before getHandlerMap()/getToolEntries().
+   *
+   * @param fsBackend - Optional FSBackend (memfs). When provided, file tools
+   *   use it instead of node:fs. Shell/git/PTY tools return memfs-mode errors.
    */
-  buildToolEntries(workDir: string, guard: unknown, verbose: boolean): void {
+  buildToolEntries(workDir: string, guard: unknown, verbose: boolean, fsBackend?: unknown): void {
     this._allToolEntries = [];
     this._handlerMap.clear();
     this._toolNameSet.clear();
@@ -196,6 +199,7 @@ export class PluginManager {
       workDir,
       guard,
       verbose,
+      fsBackend,
     };
 
     for (const loaded of this.plugins) {

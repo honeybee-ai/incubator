@@ -42,6 +42,8 @@ export interface AgentSpec {
   wakeOn?: { types?: string[] | null; timeout?: number; maxWakes?: number } | null;
   /** Mock behavior for type: 'mock' agents. */
   mock?: MockBehavior | null;
+  /** Workspace backend: 'memfs' for in-memory filesystem, 'real' for disk (default). */
+  workspace?: 'memfs' | 'real';
 }
 
 export interface AgentsConfig {
@@ -84,6 +86,8 @@ export class BroodOrchestrator {
   private childInfo: AgentInfo[] = [];
   private propolisPid?: number;
   private pool?: AgentPool;
+  /** MemFS instances keyed by agentId (for changeset extraction). */
+  private memfsInstances = new Map<string, unknown>();
 
   constructor(
     private config: AgentsConfig,
@@ -238,8 +242,20 @@ export class BroodOrchestrator {
 
         // Workers run in-process when pool is available
         if (agentType === 'worker' && this.pool && poolCtx) {
-          const agentId = await this.pool.startAgent(agent, poolCtx);
+          // Build per-agent pool context (with optional memfs)
+          let agentPoolCtx = poolCtx;
+          if (agent.workspace === 'memfs') {
+            const memfs = await this.createMemFS(worktree);
+            agentPoolCtx = { ...poolCtx, fsBackend: memfs };
+          }
+
+          const agentId = await this.pool.startAgent(agent, agentPoolCtx);
           this.childInfo.push({ agentId, role: agent.role, type: 'worker', inProcess: true });
+
+          // Store memfs reference for changeset extraction
+          if (agent.workspace === 'memfs' && agentPoolCtx.fsBackend) {
+            this.memfsInstances.set(agentId, agentPoolCtx.fsBackend);
+          }
 
           const providerShorthand =
             (agent.modelHint && config.models?.[agent.modelHint])
@@ -248,8 +264,9 @@ export class BroodOrchestrator {
             ?? 'ollama/qwen3:8b';
           this.telemetry?.record('agent_spawn', {
             agentId, role: agent.role, provider: providerShorthand, type: 'worker', inProcess: true,
+            workspace: agent.workspace ?? 'real',
           });
-          this.log(`Worker ${agentId} (${agent.role}) started in-process → ${providerShorthand}`);
+          this.log(`Worker ${agentId} (${agent.role}) started in-process${agent.workspace === 'memfs' ? ' [memfs]' : ''} → ${providerShorthand}`);
           continue;
         }
 
@@ -529,6 +546,46 @@ export class BroodOrchestrator {
         this.log(`Sent SIGKILL to ${agentId} (did not exit gracefully)`);
       }
     }, 5000);
+  }
+
+  /**
+   * Create a MemFS instance seeded from the worktree directory.
+   * Dynamic import avoids hard dep on propolis (optional).
+   */
+  private async createMemFS(worktree: string): Promise<unknown> {
+    try {
+      const { MemFS } = await import('@honeybee-ai/propolis');
+      const memfs = new MemFS();
+      memfs.seedFromDir(worktree);
+      this.log(`MemFS seeded from ${worktree} (${memfs.fileCount} files)`);
+      return memfs;
+    } catch (err) {
+      this.log(`Failed to create MemFS: ${(err as Error).message}`);
+      throw new Error('MemFS requires @honeybee-ai/propolis to be installed');
+    }
+  }
+
+  /**
+   * Get the MemFS changeset for a specific agent.
+   * Returns null if the agent doesn't use memfs.
+   */
+  getAgentChangeset(agentId: string): Map<string, string | null> | null {
+    const memfs = this.memfsInstances.get(agentId);
+    if (!memfs || typeof (memfs as Record<string, unknown>).getChangeset !== 'function') return null;
+    return (memfs as { getChangeset(): Map<string, string | null> }).getChangeset();
+  }
+
+  /**
+   * Get all MemFS changesets (agentId → changeset map).
+   */
+  getAllChangesets(): Map<string, Map<string, string | null>> {
+    const result = new Map<string, Map<string, string | null>>();
+    for (const [agentId, memfs] of this.memfsInstances) {
+      if (typeof (memfs as Record<string, unknown>).getChangeset === 'function') {
+        result.set(agentId, (memfs as { getChangeset(): Map<string, string | null> }).getChangeset());
+      }
+    }
+    return result;
   }
 
   /** Graceful shutdown: stop pool agents → SIGTERM child processes → propolis. */
