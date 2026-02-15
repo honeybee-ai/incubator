@@ -286,9 +286,25 @@ export class DirectRuntime {
     }
   }
 
-  /** Get shared state. */
-  async getState(): Promise<string> {
+  /** Get shared state. Optional key for single-key or glob-pattern filtering. */
+  async getState(key?: string): Promise<string> {
     try {
+      if (key && key !== 'all') {
+        // Single key lookup (no glob) — fast path
+        if (!key.includes('*') && !key.includes('?')) {
+          const entry = await this.stores.state.get(key);
+          if (!entry) return JSON.stringify({ found: false, key });
+          return JSON.stringify({ found: true, key, value: entry.value });
+        }
+        // Glob pattern — use store query
+        const entries = await this.stores.state.query(key);
+        const state: Record<string, unknown> = {};
+        for (const entry of entries) {
+          state[entry.key] = entry.value;
+        }
+        return JSON.stringify(state);
+      }
+      // All state
       const entries = await this.stores.state.query();
       const state: Record<string, unknown> = {};
       for (const entry of entries) {

@@ -7,6 +7,7 @@ import type { ToolClient } from './tool-client.js';
 import type { DirectRuntime } from './acp/direct-runtime.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 import type { MockAction, MockBehavior } from '../orchestrator.js';
+import { resolveTemplates } from '../waggle/templates.js';
 
 /**
  * Run a mock agent that executes a scripted sequence of tool calls.
@@ -146,7 +147,7 @@ async function dispatchAcpTool(
     case 'release':
       return runtime.releaseResource(args.resource as string);
     case 'get_state':
-      return runtime.getState();
+      return runtime.getState(args.key as string | undefined);
     case 'set_state':
       return runtime.setState(args.key as string, args.value);
     default:
@@ -154,52 +155,4 @@ async function dispatchAcpTool(
   }
 }
 
-// ─── Template resolution ────────────────────────────────────────
-
-/**
- * Resolve $last.field templates in args.
- * $last refers to the previous tool call's result.
- * $last.foo.bar navigates nested objects.
- */
-function resolveTemplates(
-  args: Record<string, unknown>,
-  lastResult: unknown,
-): Record<string, unknown> {
-  const resolved: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    resolved[key] = resolveValue(value, lastResult);
-  }
-  return resolved;
-}
-
-function resolveValue(value: unknown, lastResult: unknown): unknown {
-  if (typeof value === 'string' && value.startsWith('$last')) {
-    return resolveLastPath(value, lastResult);
-  }
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    return resolveTemplates(value as Record<string, unknown>, lastResult);
-  }
-  if (Array.isArray(value)) {
-    return value.map(v => resolveValue(v, lastResult));
-  }
-  return value;
-}
-
-function resolveLastPath(template: string, lastResult: unknown): unknown {
-  if (template === '$last') return lastResult;
-
-  const path = template.slice(6); // Remove '$last.'
-  const parts = path.split('.');
-  let current: unknown = lastResult;
-
-  for (const part of parts) {
-    if (current === null || current === undefined) return undefined;
-    if (typeof current === 'object') {
-      current = (current as Record<string, unknown>)[part];
-    } else {
-      return undefined;
-    }
-  }
-
-  return current;
-}
+// Template resolution imported from '../waggle/templates.js' (shared with compound tool)

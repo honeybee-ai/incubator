@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { AgentConfig, ChatMessage, AgentResult, TokenUsage, StartOnConfig, WakeOnConfig } from './types.js';
 import type { ProtocolResponse } from './acp/runtime.js';
 import { chatCompletion, getToolCallArgs } from './providers.js';
@@ -84,11 +85,11 @@ const SYNTHETIC_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'get_state',
-      description: 'Get shared state for this hive. Use key="all" to get everything, or a specific key name.',
+      description: 'Get shared state for this hive. Use key="all" to get everything, a specific key name for one value, or a glob pattern (e.g. "research.*") to get matching keys.',
       parameters: {
         type: 'object',
         properties: {
-          key: { type: 'string', description: 'State key to retrieve, or "all" for all state' },
+          key: { type: 'string', description: 'State key name, "all" for everything, or glob pattern (e.g. "plan.*")' },
         },
         required: ['key'],
       },
@@ -213,6 +214,11 @@ export class AgentRunner {
     const startTime = Date.now();
     const totalUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     const iterationUsage: TokenUsage[] = [];
+
+    // Nectar audit: generate run-level ID and check capture flag
+    const runId = randomUUID();
+    let traceId = randomUUID();
+    const captureAudit = process.env.NECTAR_CAPTURE === 'true' || process.env.NECTAR_CAPTURE === '1';
 
     const log = (msg: string) => {
       if (config.verbose) {
@@ -359,6 +365,7 @@ export class AgentRunner {
       // 5. ReAct loop
       while (iterations < maxIterations && !this.stopFlag) {
         iterations++;
+        traceId = randomUUID();
         log(`Iteration ${iterations}/${maxIterations}`);
 
         // Cost controls: maxTotalTokens
@@ -399,6 +406,23 @@ export class AgentRunner {
         }
 
         // Call LLM with retry logic
+        // Set traceId/runId on logging client if it supports it (duck-typed)
+        if (toolClient && 'traceId' in toolClient) {
+          const loggingClient = toolClient as unknown as { traceId: string; runId: string };
+          loggingClient.traceId = traceId;
+          loggingClient.runId = runId;
+        }
+
+        // Nectar: capture full prompt before LLM call
+        if (captureAudit && telemetry) {
+          telemetry.record('llm_prompt', {
+            runId, traceId, agentId, role,
+            provider: provider.type, model: provider.model,
+            iteration: iterations, messageCount: messages.length,
+            _payload: JSON.stringify(messages),
+          });
+        }
+
         let response: ChatMessage;
         let usage: TokenUsage;
         let retryCount = 0;
@@ -412,7 +436,7 @@ export class AgentRunner {
             response = result.message;
             usage = result.usage;
             telemetry?.record('llm_call', {
-              agentId, role, provider: provider.type, model: provider.model,
+              runId, traceId, agentId, role, provider: provider.type, model: provider.model,
               promptTokens: usage.promptTokens, completionTokens: usage.completionTokens,
               latency_ms: Date.now() - llmStart,
             });
@@ -420,7 +444,7 @@ export class AgentRunner {
           } catch (err) {
             retryCount++;
             telemetry?.record('llm_error', {
-              agentId, role, provider: provider.type, model: provider.model,
+              runId, traceId, agentId, role, provider: provider.type, model: provider.model,
               error: (err as Error).message, retryCount,
               latency_ms: Date.now() - llmStart,
             });
@@ -429,6 +453,17 @@ export class AgentRunner {
             log(`LLM call failed (attempt ${retryCount}/${maxRetries}): ${(err as Error).message} — retrying in ${delay}ms`);
             await new Promise(r => setTimeout(r, delay));
           }
+        }
+
+        // Nectar: capture full response after LLM call
+        if (captureAudit && telemetry) {
+          telemetry.record('llm_response', {
+            runId, traceId, agentId, role,
+            provider: provider.type, model: provider.model,
+            promptTokens: usage.promptTokens, completionTokens: usage.completionTokens,
+            hasToolCalls: !!(response.tool_calls?.length),
+            _payload: JSON.stringify({ content: response.content, tool_calls: response.tool_calls }),
+          });
         }
         messages.push(response);
 
@@ -461,7 +496,7 @@ export class AgentRunner {
             messages.push({ role: 'user', content: '[SYSTEM] Context was compacted. Previous messages were trimmed.' });
           }
           telemetry?.record('context_compaction', {
-            agentId, role, iteration: iterations,
+            runId, traceId, agentId, role, iteration: iterations,
             promptTokensBefore: usage.promptTokens, messagesAfter: messages.length,
           });
           log(`Compacted to ${messages.length} messages`);
@@ -561,7 +596,7 @@ export class AgentRunner {
             } else if (name === 'set_state') {
               result = await runtime.setState(args.key as string, args.value);
             } else if (name === 'get_state') {
-              result = await runtime.getState();
+              result = await runtime.getState(args.key as string | undefined);
             } else if (name === 'claim_resource') {
               result = await runtime.claimResource(args.resource as string, args.reason as string | undefined);
             } else if (name === 'release_resource') {
@@ -579,7 +614,7 @@ export class AgentRunner {
             }
           }
 
-          telemetry?.record('tool_call', { agentId, role, tool: name });
+          telemetry?.record('tool_call', { runId, traceId, agentId, role, tool: name });
 
           // Log result
           log(`${DIM}→ ${result}${RESET}${color}`);
@@ -615,7 +650,7 @@ export class AgentRunner {
           exitReason = 'halted';
           if (runtime) await runtime.onComplete('Agent halted', totalUsage);
           telemetry?.record('agent_complete', {
-            agentId, role, status: 'completed', iterations, exitReason,
+            runId, traceId, agentId, role, status: 'completed', iterations, exitReason,
             provider: provider.type, model: provider.model,
             totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime, wakeCount,
           });
@@ -648,7 +683,7 @@ export class AgentRunner {
       const summary = `Agent ${agentId} completed after ${iterations} iterations (${totalUsage.totalTokens.toLocaleString()} tokens)`;
       if (runtime) await runtime.onComplete(summary, totalUsage);
       telemetry?.record('agent_complete', {
-        agentId, role, status: 'completed', iterations, exitReason,
+        runId, traceId, agentId, role, status: 'completed', iterations, exitReason,
         provider: provider.type, model: provider.model,
         promptTokens: totalUsage.promptTokens, completionTokens: totalUsage.completionTokens,
         totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime, wakeCount,
@@ -667,7 +702,7 @@ export class AgentRunner {
         try { await runtime.onComplete(`Error: ${errMsg}`, totalUsage); } catch { /* ignore */ }
       }
       telemetry?.record('agent_complete', {
-        agentId, role, status: 'error', iterations, exitReason: 'error', error: errMsg,
+        runId, traceId, agentId, role, status: 'error', iterations, exitReason: 'error', error: errMsg,
         provider: provider.type, model: provider.model,
         totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime,
       });

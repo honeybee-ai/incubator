@@ -394,6 +394,102 @@ describe('compoundHandler — load_protocol', () => {
   });
 });
 
+// ─── $last template resolution ──────────────────────────────────────
+
+describe('compoundHandler — $last templates', () => {
+  it('resolves $last across sequential ops', async () => {
+    const acp = mockAcp();
+    // get_state returns { key1: 'val1' }
+    const ctx = makeCtx({ acp });
+    const result = await compoundHandler({
+      dance: [
+        { do: 'get_state' },
+        { do: 'set_state', key: 'echo', value: '$last.key1' },
+      ],
+    }, ctx);
+    expect(result.results).toHaveLength(2);
+    expect(result.results[0].ok).toBe(true);
+    expect(result.results[1].ok).toBe(true);
+    expect(acp.setState).toHaveBeenCalledWith('echo', 'val1');
+  });
+
+  it('resolves $last as entire previous result', async () => {
+    const acp = mockAcp();
+    const ctx = makeCtx({ acp });
+    const result = await compoundHandler({
+      dance: [
+        { do: 'get_state' },
+        { do: 'set_state', key: 'snapshot', value: '$last' },
+      ],
+    }, ctx);
+    expect(acp.setState).toHaveBeenCalledWith('snapshot', { key1: 'val1' });
+  });
+
+  it('resolves $last from env op results', async () => {
+    const readHandler = mockHandler({ content: 'file data', path: 'input.txt' });
+    const writeHandler = mockHandler({ written: true });
+    const ctx: CompoundContext = {
+      handlers: new Map([['read_file', readHandler], ['write_file', writeHandler]]),
+    };
+    await compoundHandler({
+      dance: [
+        { do: 'read_file', path: 'input.txt' },
+        { do: 'write_file', path: 'copy.txt', content: '$last.content' },
+      ],
+    }, ctx);
+    expect(writeHandler).toHaveBeenCalledWith({ path: 'copy.txt', content: 'file data' });
+  });
+
+  it('does not update $last on failed ops', async () => {
+    const acp = mockAcp();
+    const readHandler = vi.fn().mockRejectedValue(new Error('boom'));
+    const ctx: CompoundContext = {
+      handlers: new Map([['read_file', readHandler], ['write_file', mockHandler({ ok: true })]]),
+      acp,
+    };
+    const result = await compoundHandler({
+      dance: [
+        { do: 'get_state' },          // → { key1: 'val1' }
+        { do: 'read_file', path: 'x' }, // → error (does NOT update $last)
+        { do: 'set_state', key: 'v', value: '$last.key1' },  // → should still be 'val1'
+      ],
+    }, ctx);
+    expect(result.results[1].ok).toBe(false);
+    expect(acp.setState).toHaveBeenCalledWith('v', 'val1');
+  });
+});
+
+// ─── get_state with key/prefix ──────────────────────────────────────
+
+describe('compoundHandler — get_state with key', () => {
+  it('passes key param to getState', async () => {
+    const acp = mockAcp();
+    const ctx = makeCtx({ acp });
+    await compoundHandler({
+      dance: [{ do: 'get_state', key: 'research.project' }],
+    }, ctx);
+    expect(acp.getState).toHaveBeenCalledWith('research.project');
+  });
+
+  it('passes undefined when no key specified', async () => {
+    const acp = mockAcp();
+    const ctx = makeCtx({ acp });
+    await compoundHandler({
+      dance: [{ do: 'get_state' }],
+    }, ctx);
+    expect(acp.getState).toHaveBeenCalledWith(undefined);
+  });
+
+  it('passes glob pattern to getState', async () => {
+    const acp = mockAcp();
+    const ctx = makeCtx({ acp });
+    await compoundHandler({
+      dance: [{ do: 'get_state', key: 'research.*' }],
+    }, ctx);
+    expect(acp.getState).toHaveBeenCalledWith('research.*');
+  });
+});
+
 // ─── Primitive filtering ────────────────────────────────────────────
 
 describe('compoundHandler — primitives', () => {

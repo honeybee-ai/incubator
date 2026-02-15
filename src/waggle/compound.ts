@@ -5,6 +5,7 @@ import type {
 import type { ToolResult } from '../propolis/tools/types.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 import type { PluginManager } from '../plugins/index.js';
+import { resolveTemplates } from './templates.js';
 
 // ─── Handler map ────────────────────────────────────────────────────
 
@@ -75,13 +76,22 @@ export async function compoundHandler(
   ctx: CompoundContext,
 ): Promise<WaggleResult> {
   const results: OpResult[] = [];
+  let lastResult: unknown = null;
 
   const envActions = ctx.envActions ?? DEFAULT_ENV_ACTIONS;
 
   // Execute ops sequentially
-  for (const op of input.dance) {
-    const action = op.do;
+  for (const rawOp of input.dance) {
+    const action = rawOp.do;
     const opStart = Date.now();
+
+    // Resolve $last templates in op args (everything except 'do')
+    const opArgs: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rawOp)) {
+      if (k !== 'do') opArgs[k] = v;
+    }
+    const resolved = resolveTemplates(opArgs, lastResult);
+    const op: Operation = { do: action, ...resolved };
 
     if (ACP_ACTIONS.has(action)) {
       // Check ACP primitive filtering
@@ -90,6 +100,7 @@ export async function compoundHandler(
         continue;
       }
       const result = await executeAcpOp(op, ctx.acp);
+      if (result.ok) lastResult = result.data;
       ctx.telemetry?.record('tool_call', { action, success: result.ok, latency_ms: Date.now() - opStart });
       results.push(result);
     } else if (envActions.has(action) || ctx.handlers.has(action) || ctx.handlers.has(ENV_ACTION_MAP[action] ?? '')) {
@@ -99,6 +110,7 @@ export async function compoundHandler(
         continue;
       }
       const result = await executeEnvOp(op, ctx.handlers, envActions);
+      if (result.ok) lastResult = result.data;
       ctx.telemetry?.record('tool_call', { action, success: result.ok, latency_ms: Date.now() - opStart });
       results.push(result);
     } else {
@@ -208,7 +220,7 @@ async function executeAcpOp(
         resultStr = await acp.releaseResource(op.resource as string);
         break;
       case 'get_state':
-        resultStr = await acp.getState();
+        resultStr = await acp.getState(op.key as string | undefined);
         break;
       case 'set_state':
         resultStr = await acp.setState(op.key as string, op.value);

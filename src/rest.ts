@@ -1,7 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Stores } from './stores/interfaces.js';
 import type { NamespaceRegistry } from './namespaces.js';
 import type { DanceSupport } from './ws.js';
+import type { SessionStore } from './sessions.js';
 import { CarapaceBlockedError } from './guard.js';
 import { parseSpec, SpecValidationError } from '@agentcoordinationprotocol/spec';
 
@@ -39,18 +41,56 @@ function json(res: ServerResponse, status: number, data: unknown, req?: Incoming
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Agent-Id, X-Namespace',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Agent-Id, X-Namespace, X-Session-Token',
   };
   if (origin) headers['Access-Control-Allow-Origin'] = origin;
   res.writeHead(status, headers);
   res.end(JSON.stringify(data));
 }
 
-function getAgentId(req: IncomingMessage, body: Record<string, unknown>): string {
-  const id = (body.agentId as string) ?? (req.headers['x-agent-id'] as string) ?? 'rest_anonymous';
+/**
+ * Resolve the effective agent ID for a REST request.
+ *
+ * Priority:
+ * 1. Valid X-Session-Token header → mapped agentId (trusted)
+ * 2. Client-supplied X-Agent-Id / body.agentId (untrusted fallback)
+ *    - If that ID is registered in SessionStore but no valid token → anonymize
+ *    - This prevents spoofing of registered agent identities
+ *
+ * @internal Exported for testing only.
+ */
+export function resolveAgentId(req: IncomingMessage, body: Record<string, unknown>, sessions?: SessionStore): string {
+  // 1. Check session token (trusted path)
+  const token = req.headers['x-session-token'] as string | undefined;
+  if (token && sessions) {
+    const verified = sessions.verify(token);
+    if (verified) return verified;
+  }
+
+  // 2. Client-supplied ID (untrusted)
+  const clientId = (body.agentId as string) ?? (req.headers['x-agent-id'] as string) ?? 'rest_anonymous';
+
   // Reject reserved honeycomb: prefix to prevent loop prevention bypass
-  if (id.startsWith('honeycomb:')) return 'rest_anonymous';
-  return id;
+  if (clientId.startsWith('honeycomb:')) return 'rest_anonymous';
+
+  // 3. If this ID is registered (has a session token) but the caller didn't
+  //    provide a valid token → they're trying to spoof. Assign anonymous ID.
+  if (sessions && sessions.isRegistered(clientId)) {
+    return `rest_anon_${randomBytes(4).toString('hex')}`;
+  }
+
+  return clientId;
+}
+
+/**
+ * Module-level session store reference, set by handleRestRequest before dispatching.
+ * This avoids threading the sessions parameter through every route handler signature.
+ * @internal
+ */
+let _activeSessions: SessionStore | undefined;
+
+function getAgentId(req: IncomingMessage, body: Record<string, unknown>): string {
+  return resolveAgentId(req, body, _activeSessions);
 }
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
@@ -286,7 +326,7 @@ const routes: Route[] = [
     pattern: /^\/api\/messages$/,
     handler: async (req, res, stores) => {
       const url = new URL(req.url!, `http://localhost`);
-      const agentId = req.headers['x-agent-id'] as string ?? 'rest_anonymous';
+      const agentId = getAgentId(req, {});
       const since = url.searchParams.get('since') ?? undefined;
       const messages = await stores.messages.getFor(agentId, since);
       json(res, 200, { count: messages.length, messages });
@@ -310,7 +350,15 @@ const routes: Route[] = [
       // Server-side: assign the new role (protocol validation happens at a higher layer)
       await stores.roles.assign(agentId, role);
       await stores.events.publish('role.transition', { agent: agentId, from: fromRole ?? null, to: role, reason: body.reason ?? null }, agentId);
-      json(res, 200, { approved: true, from: fromRole ?? null, to: role });
+
+      // Issue session token for anti-spoofing (R2-H4, R3-H5)
+      const sessionToken = _activeSessions?.register(agentId, role);
+      json(res, 200, {
+        approved: true,
+        from: fromRole ?? null,
+        to: role,
+        ...(sessionToken ? { sessionToken } : {}),
+      });
     },
   },
   {
@@ -582,7 +630,7 @@ const routes: Route[] = [
       const status = (body.status as 'completed' | 'failed') ?? 'completed';
       const target = body.target as string | undefined;
 
-      // Per-agent halt: auto-release claims and remove role
+      // Per-agent halt: auto-release claims, remove role, revoke session
       if (target) {
         const claims = await stores.claims.list();
         for (const claim of claims) {
@@ -591,6 +639,7 @@ const routes: Route[] = [
           }
         }
         await stores.roles.remove(target);
+        _activeSessions?.revoke(target);
       }
 
       const info = await stores.control.halt(reason, agentId, status, target);
@@ -725,9 +774,13 @@ export async function handleRestRequest(
   registry: NamespaceRegistry,
   verbose: boolean,
   danceSupport?: DanceSupport,
+  sessions?: SessionStore,
 ): Promise<boolean> {
   const url = req.url ?? '/';
   if (!url.startsWith('/api/')) return false;
+
+  // Make session store available to route handlers via module-level ref
+  _activeSessions = sessions;
 
   // CORS preflight
   if (req.method === 'OPTIONS') {

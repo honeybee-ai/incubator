@@ -14,6 +14,7 @@ import { runMockAgent } from './agent/mock-runner.js';
 import { DirectRuntime, type DirectRuntimeConfig } from './agent/acp/direct-runtime.js';
 import { AgentRunner } from './agent/runner.js';
 import { NativeToolClient } from './agent/native-client.js';
+import { LoggingToolClient } from './agent/logging-client.js';
 import type { ToolClient } from './agent/tool-client.js';
 import type { ToolDef } from './agent/types.js';
 import { resolveProvider } from './agent/providers.js';
@@ -133,7 +134,10 @@ export class AgentPool {
 
     // Start agent as async loop
     const runner = new AgentRunner();
-    const effectiveToolClient = toolClient ?? new NullToolClient();
+    let effectiveToolClient: ToolClient = toolClient ?? new NullToolClient();
+    if (ctx.telemetry) {
+      effectiveToolClient = new LoggingToolClient(effectiveToolClient, ctx.telemetry, agentId, spec.role);
+    }
     const promise = runner.run(config, effectiveToolClient, null, runtime, protocolData, ctx.telemetry).finally(() => {
       runtime.disconnect().catch(() => {});
       effectiveToolClient.close().catch(() => {});

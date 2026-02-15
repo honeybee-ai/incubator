@@ -202,6 +202,50 @@ describe.skipIf(!wsAvailable)('WebSocket Manager', () => {
       ws.addEventListener('open', () => reject(new Error('Should not have connected')), { once: true });
     });
   });
+
+  it('pins connection-level agentId on publish (prevents spoofing)', async () => {
+    const ws = await connect('/ws?agentId=real-agent');
+    await waitForMessage(ws); // replay_done
+
+    // Client sends publish with a DIFFERENT agentId in the message body
+    ws.send(JSON.stringify({
+      type: 'publish',
+      event: 'test.spoof',
+      data: {},
+      agentId: 'spoofed-agent',
+    }));
+
+    // Wait for the publish_ack
+    await waitForMessage(ws); // publish_ack
+
+    // Check the event was published as real-agent (connection-level), not spoofed-agent
+    const stores = registry.get('default');
+    const { events } = await stores.events.getEvents();
+    const testEvent = events.find((e: IncubatorEvent) => e.type === 'test.spoof');
+    expect(testEvent).toBeDefined();
+    expect(testEvent!.publishedBy).toBe('real-agent');
+  });
+
+  it('falls back to msg.agentId when no connection-level agentId', async () => {
+    // Connect WITHOUT agentId param (like a demo UI)
+    const ws = await connect('/ws');
+    await waitForMessage(ws); // replay_done
+
+    ws.send(JSON.stringify({
+      type: 'publish',
+      event: 'test.fallback',
+      data: {},
+      agentId: 'ui-agent',
+    }));
+
+    await waitForMessage(ws); // publish_ack
+
+    const stores = registry.get('default');
+    const { events } = await stores.events.getEvents();
+    const testEvent = events.find((e: IncubatorEvent) => e.type === 'test.fallback');
+    expect(testEvent).toBeDefined();
+    expect(testEvent!.publishedBy).toBe('ui-agent');
+  });
 });
 
 describe.skipIf(!wsAvailable)('WebSocket Dance Support', () => {

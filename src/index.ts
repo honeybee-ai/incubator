@@ -29,6 +29,7 @@ import { BroodOrchestrator, type AgentsConfig } from './orchestrator.js';
 import { WebhookManager } from './webhooks.js';
 import { setLogFormat, setLogLevel, type LogFormat } from './log.js';
 import { createTelemetryFromEnv, type TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
+import { SessionStore } from './sessions.js';
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const args: Record<string, string | boolean> = {};
@@ -237,6 +238,9 @@ export async function main() {
     }
     registry.setBus(bus, routerOptions);
 
+    // Session store for agent identity verification (anti-spoofing)
+    const sessionStore = new SessionStore();
+
     // Watch for agent lifecycle events → populate RunStore
     const defaultStoresForWatcher = registry.get('default');
     const runWatcher = new RunWatcher(bus, defaultStoresForWatcher.runs);
@@ -284,7 +288,7 @@ export async function main() {
     const requestHandler = async (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
       // REST API routes - handled before MCP
       if (req.url?.startsWith('/api/')) {
-        await handleRestRequest(req, res, registry, verbose, danceSupport);
+        await handleRestRequest(req, res, registry, verbose, danceSupport, sessionStore);
         return;
       }
 
@@ -497,20 +501,21 @@ export async function main() {
             env: broodEnv,
             agents: broodAgents,
           };
-          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager);
+          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager, sessionStore);
           orch.start().catch(err => {
             console.error(`[orchestrator] Spawn failed: ${(err as Error).message}`);
           });
           spawnedOrchestrators.push(orch);
         }
-        // Reset — shut down running agents, allow new game
+        // Reset — shut down running agents, clear sessions, allow new game
         if (event.type === 'reset') {
           gameRunning = false;
           for (const orch of spawnedOrchestrators) {
             orch.shutdown().catch(() => {});
           }
           spawnedOrchestrators.length = 0;
-          console.error('[orchestrator] Reset — agents stopped, ready for new game');
+          sessionStore.clear();
+          console.error('[orchestrator] Reset — agents stopped, sessions cleared, ready for new game');
         }
       });
     }
@@ -596,7 +601,7 @@ export async function main() {
         orchestrator = new BroodOrchestrator(
           agentsConfig, port, bus,
           defaultStoresForWatcher.runs, verbose,
-          defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager,
+          defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager, sessionStore,
         );
         orchestrator.start().catch(err => {
           console.error(`[orchestrator] Fatal: ${(err as Error).message}`);

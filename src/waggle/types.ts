@@ -54,7 +54,7 @@ export interface AcpBackend {
   publishEvent(type: string, data?: Record<string, unknown>): Promise<string>;
   claimResource(resource: string, reason?: string): Promise<string>;
   releaseResource(resource: string): Promise<string>;
-  getState(): Promise<string>;
+  getState(key?: string): Promise<string>;
   setState(key: string, value: unknown): Promise<string>;
   waitForWake(condition: { types?: string[] | null; timeout?: number }): Promise<string[]>;
   /** Load an ACP protocol spec at runtime. spec is YAML or JSON string. */

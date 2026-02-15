@@ -9,7 +9,12 @@ import { TopicRouter, type TopicRouterOptions } from './honeycomb.js';
 
 const RESERVED_NAMES = new Set(['_ns']);
 
-function installNotifications(stores: Stores, bus: NotificationBus, namespace: string): void {
+function installNotifications(
+  stores: Stores,
+  bus: NotificationBus,
+  namespace: string,
+  getProtocol: () => ProtocolSpec | undefined,
+): void {
   // Patch the event store's publish method IN PLACE so that claims/discoveries
   // (which hold a direct reference to this same event store instance) also
   // trigger bus notifications for their internal events (claim.acquired, etc.)
@@ -17,6 +22,29 @@ function installNotifications(stores: Stores, bus: NotificationBus, namespace: s
   stores.events.publish = async (type: string, data: unknown, agentId: string): Promise<IncubatorEvent> => {
     const event = await original(type, data, agentId);
     bus.publish(namespace, event);
+
+    // Auto-advance phase if this event matches the current phase's exit_condition
+    const spec = getProtocol();
+    if (spec?.phases) {
+      try {
+        const phaseEntry = await stores.state.get('phase');
+        const currentPhase = (phaseEntry?.value as string) ?? Object.keys(spec.phases)[0];
+        const phaseDef = spec.phases[currentPhase];
+        const exitCond = phaseDef?.exit_condition;
+        if (exitCond && 'event' in exitCond && exitCond.event === type) {
+          // Find next phase
+          const phaseNames = Object.keys(spec.phases);
+          const idx = phaseNames.indexOf(currentPhase);
+          if (idx >= 0 && idx < phaseNames.length - 1) {
+            const nextPhase = phaseNames[idx + 1];
+            await stores.state.set('phase', nextPhase, '_system');
+            const phaseEvent = await original('phase.changed', { from: currentPhase, to: nextPhase, trigger: type }, '_system');
+            bus.publish(namespace, phaseEvent);
+          }
+        }
+      } catch { /* phase transition failed — non-fatal */ }
+    }
+
     return event;
   };
 }
@@ -80,7 +108,7 @@ export class NamespaceRegistry {
       // Install BEFORE guard wrapping — patches the raw event store that
       // claims/discoveries hold a direct reference to, so their internal
       // events (claim.acquired, discovery.published) also notify the bus.
-      installNotifications(stores, this.bus, namespace);
+      installNotifications(stores, this.bus, namespace, () => this.protocols.get(namespace));
     }
     if (this.guard) {
       stores = createGuardedStores(stores, this.guard, this.verbose, this.telemetry);

@@ -174,11 +174,13 @@ function handleConnection(
         typeFilter = (msg.types as string[] | null) ? new Set(msg.types as string[]) : null;
       } else if (msg.type === 'publish' && typeof msg.event === 'string') {
         // Publish an event to the bus (e.g. "start" from UI)
+        // Connection-level agentId takes precedence over msg.agentId (prevents spoofing)
         const stores = registry.get(namespace);
+        const publishAgentId = agentId ?? (msg.agentId as string) ?? 'ui';
         stores.events.publish(
           msg.event,
           msg.data ?? {},
-          (msg.agentId as string) ?? 'ui',
+          publishAgentId,
         ).then((event: IncubatorEvent) => {
           bus.publish(namespace, event);
           send({ type: 'publish_ack', eventId: event.id });
@@ -198,8 +200,9 @@ function handleConnection(
           send({ type: 'error', message: 'Failed to reset state' });
         });
       } else if (msg.type === 'dance_call' && danceSupport && typeof msg.tool === 'string') {
-        const callAgentId = (msg.agentId as string) ?? agentId ?? 'unknown';
-        const callRole = (msg.role as string) ?? agentRole ?? 'unknown';
+        // Connection-level identity takes precedence over msg fields (prevents spoofing)
+        const callAgentId = agentId ?? (msg.agentId as string) ?? 'unknown';
+        const callRole = agentRole ?? (msg.role as string) ?? 'unknown';
         const callId = msg.callId as string;
 
         const getStateFn = () => danceSupport!.getState(namespace);

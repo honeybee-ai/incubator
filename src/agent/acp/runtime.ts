@@ -273,9 +273,22 @@ export class AcpRuntime {
 
   /**
    * Get shared state (exposed as synthetic tool in invisible mode).
+   * Optional key for single-key lookup or glob-pattern filtering.
    */
-  async getState(): Promise<string> {
+  async getState(key?: string): Promise<string> {
     try {
+      if (key && key !== 'all') {
+        // Single key lookup
+        if (!key.includes('*') && !key.includes('?')) {
+          const res = await this.client.getStateKey(key);
+          if (!res.ok) return JSON.stringify({ error: `Failed to get state key: ${res.status}` });
+          return JSON.stringify(res.data);
+        }
+        // Glob pattern
+        const res = await this.client.getState(key);
+        if (!res.ok) return JSON.stringify({ error: `Failed to get state: ${res.status}` });
+        return JSON.stringify(res.data);
+      }
       const res = await this.client.getState();
       if (!res.ok) return JSON.stringify({ error: `Failed to get state: ${res.status}` });
       return JSON.stringify(res.data);

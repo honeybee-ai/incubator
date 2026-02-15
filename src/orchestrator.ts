@@ -9,6 +9,7 @@ import type { DanceModule } from './dances.js';
 import { AgentPool, type PoolContext } from './agent-pool.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 import type { PluginManager } from './plugins/index.js';
+import type { SessionStore } from './sessions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Path to the bundled Claude Code ACP plugin (shipped with incubator). */
@@ -100,6 +101,7 @@ export class BroodOrchestrator {
     private danceModule?: DanceModule,
     private telemetry?: TelemetryReporter,
     private pluginManager?: PluginManager,
+    private sessionStore?: SessionStore,
   ) {}
 
   private log(msg: string): void {
@@ -219,6 +221,7 @@ export class BroodOrchestrator {
           if (this.pool && poolCtx) {
             const agentId = await this.pool.startMockAgent(agent, agent.mock ?? { actions: [] }, poolCtx);
             this.childInfo.push({ agentId, role: agent.role, type: 'worker', inProcess: true });
+            this.sessionStore?.register(agentId, agent.role);
             this.telemetry?.record('agent_spawn', {
               agentId, role: agent.role, type: 'mock', inProcess: true,
             });
@@ -251,6 +254,8 @@ export class BroodOrchestrator {
 
           const agentId = await this.pool.startAgent(agent, agentPoolCtx);
           this.childInfo.push({ agentId, role: agent.role, type: 'worker', inProcess: true });
+          // Register in session store so REST anti-spoofing knows this ID is taken
+          this.sessionStore?.register(agentId, agent.role);
 
           // Store memfs reference for changeset extraction
           if (agent.workspace === 'memfs' && agentPoolCtx.fsBackend) {
@@ -328,6 +333,12 @@ export class BroodOrchestrator {
           ...config.env,
           ...(config.tls ? { NODE_TLS_REJECT_UNAUTHORIZED: '0' } : {}),
         };
+
+        // Register agent in session store and pass token (anti-spoofing)
+        if (this.sessionStore) {
+          const token = this.sessionStore.register(agentId, agent.role);
+          childEnv['ACP_SESSION_TOKEN'] = token;
+        }
 
         // Pass custom prompt via env var (avoids shell escaping for multi-line prompts)
         if (agent.prompt) {
@@ -408,6 +419,7 @@ export class BroodOrchestrator {
               ACP_AGENT_ID: agentId,
               ACP_ROLE: agent.role,
               ...(agent.wakeOn?.types ? { ACP_WAKE_ON: agent.wakeOn.types.join(',') } : {}),
+              ...(this.sessionStore ? { ACP_SESSION_TOKEN: this.sessionStore.register(agentId, agent.role) } : {}),
               ...config.env,
             },
             mcpServers: {
@@ -477,6 +489,12 @@ export class BroodOrchestrator {
       ACP_AGENT_ID: agentId,
       ACP_ROLE: agent.role,
     };
+
+    // Register agent in session store and pass token (anti-spoofing)
+    if (this.sessionStore) {
+      const token = this.sessionStore.register(agentId, agent.role);
+      childEnv['ACP_SESSION_TOKEN'] = token;
+    }
 
     if (agent.wakeOn?.types) {
       childEnv['ACP_WAKE_ON'] = agent.wakeOn.types.join(',');
