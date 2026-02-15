@@ -44,4 +44,4 @@ jobs:
       - run: pnpm install
       - run: pnpm run build
       # --provenance requires public source repo; add back when repo goes public
-      - run: npm publish --access public
+      - run: npm publish --access restricted
