@@ -264,11 +264,9 @@ export class TriggerEngine {
     const { action, config } = triggerConfig;
 
     // Record telemetry
-    this.telemetry?.record({
-      eventType: 'trigger_fired',
+    this.telemetry?.record('trigger_fired', {
       triggerEvent: event.type,
       action,
-      timestamp: new Date().toISOString(),
     });
 
     // Dance triggers take priority over built-in actions

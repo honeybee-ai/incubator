@@ -748,8 +748,8 @@ describe('telemetry', () => {
     bus.publish('default', mockEvent('test'));
 
     expect(telemetry.record).toHaveBeenCalledWith(
+      'trigger_fired',
       expect.objectContaining({
-        eventType: 'trigger_fired',
         triggerEvent: 'test',
         action: 'log',
       }),
