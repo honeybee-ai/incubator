@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "incubator": "dist/bin.js"
+    "incubator": "dist/incubator.js"
   },
   "exports": {
     ".": {
@@ -44,6 +44,10 @@
     "./event-matcher": {
       "import": "./dist/agent/acp/event-matcher.js",
       "types": "./dist/agent/acp/event-matcher.d.ts"
+    },
+    "./eval": {
+      "import": "./dist/eval/index.js",
+      "types": "./dist/eval/index.d.ts"
     }
   },
   "files": [
@@ -52,8 +56,10 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "tsc && node scripts/build.mjs",
+    "build:types": "tsc --emitDeclarationOnly",
+    "build:bundle": "node scripts/build.mjs",
+    "start": "node dist/incubator.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "node --experimental-vm-modules node_modules/.bin/vitest",
@@ -102,6 +108,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.13.1",
     "@types/ws": "^8.5.14",
+    "esbuild": "^0.27.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   },
