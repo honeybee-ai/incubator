@@ -181,7 +181,7 @@ export async function waitForEvents(
 const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
   cerebras: 128_000,
   groq: 128_000,
-  ollama: 8_000,
+  ollama: 128_000,
   openai: 128_000,
   anthropic: 200_000,
 };
@@ -228,6 +228,8 @@ export class AgentRunner {
     };
 
     let exitReason: string = 'unknown';
+    let lastCallSignature = '';
+    let repeatCount = 0;
 
     try {
       // 0a. Connect ACP runtime (invisible coordination)
@@ -283,15 +285,26 @@ export class AgentRunner {
         protocolData = await runtime.fetchProtocol();
       }
 
-      // Check for dance tools from server — these REPLACE synthetic ACP tools
+      // Check for dance tools from server
       let danceToolNames: Set<string> | null = null;
       if (runtime) {
         const danceTools = runtime.getDanceTools();
         if (danceTools && danceTools.length > 0) {
-          // Dance tools replace ALL other tools — the LLM only sees dance-defined tools
-          toolDefs = [...danceTools];
           danceToolNames = new Set(danceTools.map(t => t.function.name));
-          log(`Dance tools: ${danceTools.map(t => t.function.name).join(', ')} (exclusive — replaced all env/acp tools)`);
+          if (config.toolFilter) {
+            // Explicit tools in brood.yaml → merge dance tools alongside env/ACP tools
+            const existingNames = new Set(toolDefs.map(t => t.function.name));
+            for (const dt of danceTools) {
+              if (!existingNames.has(dt.function.name)) {
+                toolDefs.push(dt);
+              }
+            }
+            log(`Dance tools: ${[...danceToolNames].join(', ')} (merged with ${existingNames.size} env/acp tools)`);
+          } else {
+            // No explicit tools → dance tools replace everything (game mode)
+            toolDefs = [...danceTools];
+            log(`Dance tools: ${[...danceToolNames].join(', ')} (exclusive — replaced all env/acp tools)`);
+          }
         }
       }
 
@@ -655,6 +668,25 @@ export class AgentRunner {
             totalTokens: totalUsage.totalTokens, duration_ms: Date.now() - startTime, wakeCount,
           });
           return { agentId, role, status: 'completed', iterations, usage: totalUsage, iterationUsage };
+        }
+
+        // Loop detection: if agent repeats same tool+args 3+ times, break out
+        if (response.tool_calls && response.tool_calls.length > 0) {
+          const callSig = response.tool_calls.map(tc => {
+            const a = getToolCallArgs(tc);
+            return `${tc.function.name}:${JSON.stringify(a)}`;
+          }).join('|');
+          if (callSig === lastCallSignature) {
+            repeatCount++;
+          } else {
+            lastCallSignature = callSig;
+            repeatCount = 1;
+          }
+          if (repeatCount >= 3) {
+            log(`Loop detected: same tool call repeated ${repeatCount} times — stopping agent`);
+            exitReason = 'loop_detected';
+            break;
+          }
         }
 
         // Periodic prompt refresh (every 10 iterations)

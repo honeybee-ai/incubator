@@ -12,6 +12,109 @@ interface ProtocolResponse {
   resources?: Record<string, unknown>;
 }
 
+// ─── ACP Knowledge Base ──────────────────────────────────────────────
+// Rich coordination knowledge injected into every agent's system prompt.
+// This is the equivalent of what Claude Code gets via CLAUDE.md + system-knowledge.md.
+
+const ACP_KNOWLEDGE = `## ACP (Agent Coordination Protocol) — How Coordination Works
+
+You are running inside an ACP coordination server. You coordinate with other agents through shared state, events, and claims. Understanding these primitives is critical to doing your job.
+
+### Core Primitives
+
+**State** — Shared key-value store visible to all agents. All values are strings.
+- Use state to track progress, store results, pass data between phases
+- State persists across agent iterations — it's your memory between turns
+- Use structured keys with dots for namespacing: \`scan.findings.sdk\`, \`review.report\`
+- Always check state before acting — another agent may have already done the work
+- Example: \`set_state(key="task.status", value="in_progress")\`
+
+**Events** — Pub/sub notifications between agents and the system.
+- Events trigger phase transitions (e.g., publishing "scan.complete" moves to review phase)
+- Events wake sleeping agents (agents with \`wake_on\` config)
+- Events are immutable — once published, they're in the log forever
+- Use events for signaling, not data transfer (put data in state, signal with events)
+- Example: \`publish_event(type="scan.complete", data={"repos": 3})\`
+
+**Claims** — Mutex locks on named resources.
+- Use claims to prevent two agents from working on the same thing
+- Claims have a TTL — if you crash, the claim auto-releases
+- Always check if a claim succeeded before proceeding
+- Example: \`claim_resource(resource="file:src/api.ts")\`
+
+**Phases** — Workflow stages defined in the protocol.
+- Each phase has an exit condition (usually an event type)
+- When the exit event is published, the system advances to the next phase
+- Your role may only be active in certain phases — check the protocol
+- Terminal phases end the workflow — no more transitions
+
+### How Tools Work
+
+Your tools fall into two categories:
+
+**Environment tools** — interact with the workspace:
+- \`read_file(path)\` — read file contents
+- \`write_file(path, content)\` — create/overwrite a file
+- \`patch_file(path, patch)\` — apply a diff patch
+- \`list_files(path)\` — list directory contents
+- \`glob(path, pattern)\` — find files matching a pattern
+- \`grep(path, pattern)\` — search file contents
+- \`shell(command)\` — execute a shell command (use sparingly, prefer specific tools)
+- \`git_status()\`, \`git_diff()\`, \`git_log()\` — git operations
+
+**Coordination tools** — interact with ACP:
+- \`set_state(key, value)\` — store a value in shared state (value must be a string)
+- \`get_state(key?)\` — read state (specific key or all state)
+- \`publish_event(type, data?)\` — publish an event to the coordination bus
+- \`claim_resource(resource, reason?)\` — acquire a mutex lock
+- \`release_resource(resource)\` — release a lock
+
+**Dance tools** — custom tools defined for this specific protocol. They may read files, update state, or perform protocol-specific operations automatically. Dance tools often handle multiple coordination steps in one call — prefer them over manual multi-step sequences.
+
+### Coordination Patterns
+
+**Progress Tracking**: Use state keys to track what you've done. Check state before each action to avoid repeating work.
+\`\`\`
+set_state(key="files.processed", value="api.ts,auth.ts,config.ts")
+\`\`\`
+
+**Phase Transitions**: When your phase work is complete, publish the exit event. The system handles the transition.
+\`\`\`
+publish_event(type="scan.complete", data={"findings": 5})
+\`\`\`
+
+**Data Handoff**: Store results in state before signaling completion. The next agent reads state, not events.
+\`\`\`
+set_state(key="scan.findings", value="[{...}, {...}]")  // data
+publish_event(type="scan.complete")                       // signal
+\`\`\`
+
+**Sequential Steps**: Always complete each step before moving to the next:
+1. Do the work (read files, analyze, etc.)
+2. Store results in state
+3. Publish completion event
+Never skip step 2 — the next agent needs your results.
+
+### Critical Rules
+
+1. **State values are strings.** To store structured data, use \`JSON.stringify()\`. To read it back, expect JSON.
+2. **Store before you signal.** Always \`set_state\` your results before \`publish_event\`. Events wake other agents who need your data.
+3. **Check the inject.** Before each turn, a context injection tells you exactly what to do next. Follow it precisely.
+4. **Don't repeat yourself.** If you called a tool and got a result, move on. Don't call the same tool with the same arguments again.
+5. **Don't say "DONE" unless you're truly finished.** "DONE" terminates your agent. Use "Waiting" if you're idle but may be needed later.
+6. **One step at a time.** Focus on the current action. Don't try to plan ahead or do everything in one turn.
+7. **Use dance tools when available.** Dance tools handle coordination automatically. Calling \`store_findings\` is better than manually calling \`set_state\` + \`publish_event\` separately.
+8. **Respect phases.** If the inject says it's not your phase, say "Waiting" with no tool calls. Don't try to work ahead.
+
+### Anti-Patterns (Do NOT Do These)
+
+- **Looping on the same tool call** — If you called \`set_state(key="x", value="y")\` and got \`{"ok": true}\`, it worked. Don't call it again.
+- **Skipping state storage** — Publishing an event without first storing your results means the next agent has nothing to work with.
+- **Ignoring inject context** — The \`[SYSTEM]\` message before your turn tells you exactly what to do. Read it carefully.
+- **Hallucinating file paths** — Use \`list_files\` or \`glob\` to discover real files. Don't guess filenames.
+- **Storing empty results** — If you haven't found anything yet, keep looking. Only store results when you have actual findings.
+`;
+
 /**
  * Generate system prompt for an agent.
  * When a protocol is loaded, renders the full role description, phase rules, and resources.
@@ -28,6 +131,9 @@ export function generateSystemPrompt(
 
   lines.push(`You are agent "${agentId}" with the role of "${role}".`);
   lines.push('');
+
+  // ACP knowledge base — always included
+  lines.push(ACP_KNOWLEDGE);
 
   if (protocol) {
     lines.push(`## Protocol: ${protocol.protocol.title}`);
@@ -111,7 +217,13 @@ export function generateSystemPrompt(
   lines.push('## Available Tools');
   lines.push('');
   for (const tool of tools) {
-    lines.push(`- **${tool.function.name}**: ${tool.function.description}`);
+    const params = tool.function.parameters;
+    const paramDesc = params?.properties
+      ? Object.entries(params.properties as Record<string, { type?: string; description?: string }>)
+          .map(([k, v]) => `${k}: ${v.type ?? 'any'}`)
+          .join(', ')
+      : '';
+    lines.push(`- **${tool.function.name}**(${paramDesc}): ${tool.function.description}`);
   }
   lines.push('');
 
@@ -119,7 +231,11 @@ export function generateSystemPrompt(
   lines.push('## Instructions');
   if (protocol) {
     lines.push('- Follow the steps above for your role. Use the available tools to complete each step.');
+    lines.push('- Read the [SYSTEM] inject messages carefully — they tell you exactly what to do next.');
     lines.push('- Work through the workspace files as described in your role description.');
+    lines.push('- Use dance tools (custom tools specific to this protocol) when available — they handle coordination automatically.');
+    lines.push('- After completing your work, store your results in state, then publish the completion event.');
+    lines.push('- If the inject says it is not your turn, respond with just "Waiting" and no tool calls.');
     lines.push('- When you have completed ALL your work and have no more actions to take, respond with just the word "DONE".');
   } else if (options?.peerCount !== undefined && options.peerCount > 1) {
     lines.push(generateBootstrapNegotiationPrompt(agentId, options.peerCount));

@@ -47,6 +47,14 @@ export interface AgentSpec {
   workspace?: 'memfs' | 'real';
 }
 
+/** Apiary VPS config for remote shell bridging. */
+export interface ApiaryConfig {
+  url: string;       // "http://apiary.honeyb.dev:3300"
+  repo?: string;     // git clone URL
+  branch?: string;   // git branch (default: main)
+  setup?: string;    // post-clone setup command (e.g. "pnpm install")
+}
+
 export interface AgentsConfig {
   provider: string;
   stagger: number;
@@ -65,6 +73,8 @@ export interface AgentsConfig {
   agents: AgentSpec[];
   models?: Record<string, string>;
   env?: Record<string, string>;
+  /** Apiary VPS config for memfs remote shell. Secret comes from APIARY_SECRET env. */
+  apiary?: ApiaryConfig;
 }
 
 export interface AgentInfo {
@@ -89,6 +99,11 @@ export class BroodOrchestrator {
   private pool?: AgentPool;
   /** MemFS instances keyed by agentId (for changeset extraction). */
   private memfsInstances = new Map<string, unknown>();
+  /** Apiary workspace IDs created during this session (for cleanup). */
+  private workspaceIds = new Set<string>();
+
+  /** Path to write coordination JSONL log (experiment tracing). */
+  coordinationLog?: string;
 
   constructor(
     private config: AgentsConfig,
@@ -203,6 +218,7 @@ export class BroodOrchestrator {
         models: config.models,
         telemetry: this.telemetry,
         pluginManager: this.pluginManager,
+        coordinationLog: this.coordinationLog,
       };
     }
 
@@ -245,11 +261,19 @@ export class BroodOrchestrator {
 
         // Workers run in-process when pool is available
         if (agentType === 'worker' && this.pool && poolCtx) {
-          // Build per-agent pool context (with optional memfs)
+          // Build per-agent pool context (with optional memfs + remote shell)
           let agentPoolCtx = poolCtx;
           if (agent.workspace === 'memfs') {
             const memfs = await this.createMemFS(worktree);
             agentPoolCtx = { ...poolCtx, fsBackend: memfs };
+
+            // If apiary is configured, create a workspace and enable remote shell
+            if (config.apiary) {
+              const remoteShell = await this.createApiaryWorkspace(config.apiary, agent.role);
+              if (remoteShell) {
+                agentPoolCtx = { ...agentPoolCtx, remoteShell };
+              }
+            }
           }
 
           const agentId = await this.pool.startAgent(agent, agentPoolCtx);
@@ -564,6 +588,61 @@ export class BroodOrchestrator {
         this.log(`Sent SIGKILL to ${agentId} (did not exit gracefully)`);
       }
     }, 5000);
+  }
+
+  /**
+   * Create a workspace on the Apiary VPS and return RemoteShellConfig.
+   * Returns null if the workspace creation fails (agent falls back to pure memfs).
+   */
+  private async createApiaryWorkspace(
+    apiary: ApiaryConfig,
+    role: string,
+  ): Promise<{ apiaryUrl: string; apiarySecret: string; workspaceId: string } | null> {
+    const secret = process.env['APIARY_SECRET'];
+    if (!secret) {
+      this.log('APIARY_SECRET not set — skipping remote shell');
+      return null;
+    }
+
+    const workspaceId = `${role}-${randomBytes(4).toString('hex')}`;
+
+    try {
+      const res = await fetch(`${apiary.url}/workspaces`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspaceId,
+          source: apiary.repo ? {
+            type: 'git',
+            url: apiary.repo,
+            branch: apiary.branch ?? 'main',
+          } : undefined,
+          setup: apiary.setup,
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        this.log(`Apiary workspace creation failed (${res.status}): ${body}`);
+        return null;
+      }
+
+      this.workspaceIds.add(workspaceId);
+      this.log(`Apiary workspace created: ${workspaceId}`);
+
+      return {
+        apiaryUrl: apiary.url,
+        apiarySecret: secret,
+        workspaceId,
+      };
+    } catch (err) {
+      this.log(`Apiary workspace creation error: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   /**

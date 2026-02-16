@@ -781,7 +781,11 @@ function extractToolCallsFromText(
       const parsed = JSON.parse(candidate);
       const items = Array.isArray(parsed) ? parsed : [parsed];
 
-      for (const item of items) {
+      for (let item of items) {
+        // Handle double-encoded JSON strings (model outputs stringified tool calls)
+        if (typeof item === 'string') {
+          try { item = JSON.parse(item); } catch { continue; }
+        }
         if (!item || typeof item !== 'object') continue;
 
         if (typeof item.name === 'string' && toolNames.has(item.name)) {

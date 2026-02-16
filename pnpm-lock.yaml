@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@honeybee-ai/propolis': link:../propolis
+
 importers:
 
   .:
@@ -26,6 +29,9 @@ importers:
       '@honeybee-ai/hivemind-sdk':
         specifier: ^0.2.10
         version: 0.2.10
+      '@honeybee-ai/propolis':
+        specifier: link:../propolis
+        version: link:../propolis
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.26.0(zod@3.25.76)

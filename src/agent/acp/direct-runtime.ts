@@ -3,6 +3,7 @@
  * Same public interface as AcpRuntime but bypasses HTTP/WS entirely.
  * Used by AgentPool for worker agents running inside the incubator process.
  */
+import { appendFileSync } from 'node:fs';
 import type { Stores } from '../../stores/interfaces.js';
 import type { NotificationBus } from '../../bus.js';
 import type { IncubatorEvent } from '../../types.js';
@@ -34,6 +35,8 @@ export interface DirectRuntimeConfig {
   protocolData?: ProtocolResponse;
   /** Registry for runtime protocol loading. */
   registry?: NamespaceRegistry;
+  /** Path to write coordination JSONL log (experiment tracing). */
+  coordinationLog?: string;
 }
 
 export class DirectRuntime {
@@ -47,6 +50,7 @@ export class DirectRuntime {
   private danceModule?: DanceModule;
   private protocolData?: ProtocolResponse;
   private registry?: NamespaceRegistry;
+  private coordinationLog?: string;
   private iterationCount = 0;
   private eventBuffer: string[] = [];
   private unsubscribe?: () => void;
@@ -65,6 +69,16 @@ export class DirectRuntime {
     this.danceModule = config.danceModule;
     this.protocolData = config.protocolData;
     this.registry = config.registry;
+    this.coordinationLog = config.coordinationLog;
+  }
+
+  /** Append a coordination operation to the JSONL log file (if configured). */
+  private logCoordination(op: string, details: Record<string, unknown>): void {
+    if (!this.coordinationLog) return;
+    const entry = { ts: Date.now(), agent: this.agentId, role: this.role, op, ...details };
+    try {
+      appendFileSync(this.coordinationLog, JSON.stringify(entry) + '\n');
+    } catch { /* best-effort logging */ }
   }
 
   /** Connect — register role and subscribe to bus events. */
@@ -268,6 +282,7 @@ export class DirectRuntime {
 
   /** Publish a coordination event. */
   async publishEvent(type: string, data: Record<string, unknown> = {}): Promise<string> {
+    this.logCoordination('publish', { type, data });
     try {
       await this.stores.events.publish(type, data, this.agentId);
       return JSON.stringify({ published: true, type });
@@ -278,6 +293,7 @@ export class DirectRuntime {
 
   /** Set shared state. */
   async setState(key: string, value: unknown): Promise<string> {
+    this.logCoordination('set_state', { key, value });
     try {
       await this.stores.state.set(key, value, this.agentId);
       return JSON.stringify({ ok: true, key });
@@ -288,6 +304,7 @@ export class DirectRuntime {
 
   /** Get shared state. Optional key for single-key or glob-pattern filtering. */
   async getState(key?: string): Promise<string> {
+    this.logCoordination('get_state', { key: key ?? 'all' });
     try {
       if (key && key !== 'all') {
         // Single key lookup (no glob) — fast path
@@ -318,6 +335,7 @@ export class DirectRuntime {
 
   /** Claim a resource. */
   async claimResource(resource: string, reason?: string): Promise<string> {
+    this.logCoordination('claim', { resource, reason });
     try {
       const result = await this.stores.claims.claim(resource, reason ?? resource, this.agentId, 5 * 60 * 1000);
       if (result.status === 'approved') {
@@ -333,6 +351,7 @@ export class DirectRuntime {
 
   /** Release a claimed resource. */
   async releaseResource(resource: string): Promise<string> {
+    this.logCoordination('release', { resource });
     try {
       await this.stores.claims.release(resource, this.agentId);
       this.claimedResources.delete(resource);

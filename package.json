@@ -48,6 +48,10 @@
     "./eval": {
       "import": "./dist/eval/index.js",
       "types": "./dist/eval/index.d.ts"
+    },
+    "./agent": {
+      "import": "./dist/agent/unified/index.js",
+      "types": "./dist/agent/unified/index.d.ts"
     }
   },
   "files": [
@@ -98,6 +102,7 @@
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
     "@honeybee-ai/carapace": "^1.0.1",
     "@honeybee-ai/hivemind-sdk": "^0.2.10",
+    "@honeybee-ai/propolis": "link:../propolis",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "groq-sdk": "^0.37.0",
     "js-yaml": "^4.1.1",

@@ -47,6 +47,10 @@ export interface PoolContext {
   pluginManager?: PluginManager;
   /** FSBackend for memfs workspace mode (opaque, passed to PluginManager). */
   fsBackend?: unknown;
+  /** Apiary remote shell config for memfs+VPS mode (opaque, passed to PluginManager). */
+  remoteShell?: unknown;
+  /** Path to write coordination JSONL log (experiment tracing). */
+  coordinationLog?: string;
 }
 
 interface PoolAgent {
@@ -87,6 +91,7 @@ export class AgentPool {
       danceModule: ctx.danceModule,
       protocolData: protocolData ?? undefined,
       registry: ctx.registry,
+      coordinationLog: ctx.coordinationLog,
     };
     const runtime = new DirectRuntime(runtimeConfig);
 
@@ -99,9 +104,9 @@ export class AgentPool {
     const toolFilter = spec.tools && spec.tools !== 'all' ? spec.tools : null;
     let toolClient: NativeToolClient | null = null;
     if (ctx.pluginManager?.hasToolEntries() || ctx.fsBackend) {
-      if (ctx.fsBackend && ctx.pluginManager) {
-        // Per-agent tool entries with memfs backend
-        ctx.pluginManager.buildToolEntries(ctx.workDir, ctx.guard, ctx.verbose, ctx.fsBackend);
+      if ((ctx.fsBackend || ctx.remoteShell) && ctx.pluginManager) {
+        // Per-agent tool entries with memfs backend (+ optional remote shell)
+        ctx.pluginManager.buildToolEntries(ctx.workDir, ctx.guard, ctx.verbose, ctx.fsBackend, ctx.remoteShell);
       }
       if (ctx.pluginManager?.hasToolEntries()) {
         toolClient = new NativeToolClient(ctx.pluginManager.getToolEntries(), toolFilter);

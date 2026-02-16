@@ -447,6 +447,7 @@ export async function main() {
         type: (a.type as 'worker' | 'drone' | 'claude' | undefined) ?? 'worker',
         prompt: typeof a.prompt === 'string' ? a.prompt : undefined,
         workspace: (a.workspace as 'memfs' | 'real' | undefined),
+        tools: Array.isArray(a.tools) ? a.tools as string[] : undefined,
         wakeOn: a.wake_on ? {
           types: (a.wake_on as Record<string, unknown>).types as string[] | undefined,
           maxWakes: (a.wake_on as Record<string, unknown>).max_wakes as number | undefined,
@@ -467,7 +468,7 @@ export async function main() {
             for (const [roleName, roleDef] of Object.entries(specData.roles)) {
               const count = typeof roleDef.agents === 'number' ? roleDef.agents : 1;
               for (let i = 0; i < count; i++) {
-                broodAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, workspace: undefined, wakeOn: undefined });
+                broodAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, wakeOn: undefined });
               }
             }
             console.error(`[incubator] Derived ${broodAgents.length} agents from spec roles`);
@@ -568,9 +569,14 @@ export async function main() {
     try {
       telemetry = createTelemetryFromEnv();
       telemetry.start();
-      if (telemetry.localEnabled) {
-        console.error(`[incubator] Telemetry:    local JSONL${telemetry.cloudEnabled ? ' + cloud sync' : ''}`);
+      if (telemetry.localEnabled || telemetry.nectarEnabled) {
+        const parts: string[] = [];
+        if (telemetry.localEnabled) parts.push('local JSONL');
+        if (telemetry.nectarEnabled) parts.push('Nectar sync');
+        if (telemetry.cloudEnabled) parts.push('cloud sync');
+        console.error(`[incubator] Telemetry:    ${parts.join(' + ')}`);
       }
+      pluginManager.setTelemetry(telemetry);
       // Wire telemetry into guard (guard was set before telemetry was created)
       if (carapaceGuard && telemetry) {
         registry.setGuard(carapaceGuard, verbose, telemetry);

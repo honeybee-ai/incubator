@@ -13,6 +13,7 @@ import type {
   ToolResult,
   IntegrationEvent,
 } from '@honeybee-ai/hivemind-sdk/integrations';
+import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
 import type { NotificationBus } from '../bus.js';
 import type { IEventStore } from '../stores/interfaces.js';
 import type { IntegrationEntry } from '../integrations/config.js';
@@ -54,6 +55,7 @@ export class PluginManager {
   private namespace: string;
   private bus?: NotificationBus;
   private eventStore?: IEventStore;
+  private telemetry?: TelemetryReporter;
 
   constructor(opts?: {
     verbose?: boolean;
@@ -188,8 +190,10 @@ export class PluginManager {
    *
    * @param fsBackend - Optional FSBackend (memfs). When provided, file tools
    *   use it instead of node:fs. Shell/git/PTY tools return memfs-mode errors.
+   * @param remoteShell - Optional Apiary config. When provided with memfs,
+   *   shell/git commands proxy to the VPS instead of returning errors.
    */
-  buildToolEntries(workDir: string, guard: unknown, verbose: boolean, fsBackend?: unknown): void {
+  buildToolEntries(workDir: string, guard: unknown, verbose: boolean, fsBackend?: unknown, remoteShell?: unknown): void {
     this._allToolEntries = [];
     this._handlerMap.clear();
     this._toolNameSet.clear();
@@ -200,6 +204,7 @@ export class PluginManager {
       guard,
       verbose,
       fsBackend,
+      remoteShell,
     };
 
     for (const loaded of this.plugins) {
@@ -249,6 +254,16 @@ export class PluginManager {
   /** Tool count across all plugins. */
   getToolCount(): number {
     return this._allToolEntries.length;
+  }
+
+  /** Set telemetry reporter for plugins that need it. */
+  setTelemetry(t: TelemetryReporter): void {
+    this.telemetry = t;
+  }
+
+  /** Get the telemetry reporter (if set). */
+  getTelemetry(): TelemetryReporter | undefined {
+    return this.telemetry;
   }
 
   /** Graceful shutdown: stop all plugins, destroy resources. */

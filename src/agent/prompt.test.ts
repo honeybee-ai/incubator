@@ -75,7 +75,9 @@ describe('generateFallbackPrompt', () => {
     expect(prompt).toContain('dev-1');
     expect(prompt).toContain('developer');
     expect(prompt).toContain('read_file');
-    expect(prompt).not.toContain('Protocol');
+    // Should not contain protocol-specific sections (title, current phase)
+    expect(prompt).not.toContain('## Protocol:');
+    expect(prompt).not.toContain('Current Phase');
   });
 });
 
