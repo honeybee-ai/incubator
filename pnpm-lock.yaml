@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@honeybee-ai/propolis': link:../propolis
-
 importers:
 
   .:
@@ -27,8 +24,8 @@ importers:
         specifier: ^1.0.1
         version: 1.0.2
       '@honeybee-ai/hivemind-sdk':
-        specifier: ^0.2.10
-        version: 0.2.10
+        specifier: ^0.2.13
+        version: 0.2.13
       '@honeybee-ai/propolis':
         specifier: link:../propolis
         version: link:../propolis
@@ -275,8 +272,8 @@ packages:
     engines: {node: '>=16'}
     hasBin: true
 
-  '@honeybee-ai/hivemind-sdk@0.2.10':
-    resolution: {integrity: sha512-TqUYVBoKUs4rlPGPpF4lU0GJAkszTR0lHLc7AX7d/5Xa8U/dLk48Lewy1d0ZhrQblxjG4Fghbxev537PRJ/8MA==}
+  '@honeybee-ai/hivemind-sdk@0.2.13':
+    resolution: {integrity: sha512-HWkMVGA4zCCfb79S0eMWUIQrQh7SmjrAiWlxkFz5OMPmWmxfhyqD3tSqwsDE/lim0ola5/1ABOEBNI9xEfcmnQ==}
     engines: {node: '>=20'}
 
   '@hono/node-server@1.19.9':
@@ -1523,7 +1520,7 @@ snapshots:
 
   '@honeybee-ai/carapace@1.0.2': {}
 
-  '@honeybee-ai/hivemind-sdk@0.2.10':
+  '@honeybee-ai/hivemind-sdk@0.2.13':
     dependencies:
       zod: 3.25.76
 
