@@ -718,6 +718,26 @@ export class BroodOrchestrator {
     this.children.clear();
     this.childInfo = [];
 
+    // Clean up Apiary workspaces
+    if (this.workspaceIds.size > 0 && this.config.apiary) {
+      const secret = process.env['APIARY_SECRET'];
+      if (secret) {
+        for (const wsId of this.workspaceIds) {
+          try {
+            await fetch(`${this.config.apiary.url}/workspaces/${wsId}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${secret}` },
+              signal: AbortSignal.timeout(5000),
+            });
+            this.log(`Deleted workspace ${wsId}`);
+          } catch {
+            // Best effort cleanup
+          }
+        }
+      }
+      this.workspaceIds.clear();
+    }
+
     // Clean up plugin resources (PTY sessions, temp files, etc.)
     if (this.pluginManager) {
       await this.pluginManager.destroyAll();

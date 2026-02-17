@@ -143,9 +143,17 @@ export class AgentPool {
     if (ctx.telemetry) {
       effectiveToolClient = new LoggingToolClient(effectiveToolClient, ctx.telemetry, agentId, spec.role);
     }
-    const promise = runner.run(config, effectiveToolClient, null, runtime, protocolData, ctx.telemetry).finally(() => {
-      runtime.disconnect().catch(() => {});
-      effectiveToolClient.close().catch(() => {});
+    const promise = runner.run(config, effectiveToolClient, null, runtime, protocolData, ctx.telemetry)
+      .finally(() => {
+        runtime.disconnect().catch(() => {});
+        effectiveToolClient.close().catch(() => {});
+      });
+
+    // Log agent crashes visibly (the original was fire-and-forget with zero error output)
+    promise.catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[agent-pool] Agent ${agentId} (${spec.role}) crashed: ${msg}`);
+      ctx.telemetry?.record('agent_error', { agentId, role: spec.role, error: msg });
     });
 
     this.agents.set(agentId, { promise, runner, runtime, agentId, role: spec.role });
