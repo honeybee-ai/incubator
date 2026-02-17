@@ -3,7 +3,9 @@ FROM node:22-slim
 # Install git (waggle shell/git tools need it) and clean up
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @honeybee-ai/incubator@latest
+# Install incubator (+ private propolis dep via build secret)
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
+    npm install -g @honeybee-ai/incubator@latest
 
 WORKDIR /hive
 
