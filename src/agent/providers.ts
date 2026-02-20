@@ -14,7 +14,7 @@ export interface ProviderEntry {
 }
 
 export const PROVIDER_CATALOG: Record<string, ProviderEntry> = {
-  cerebras:  { tier: 'fast',  baseUrl: 'https://api.cerebras.ai',       format: 'openai',    defaultModel: 'llama-3.3-70b',             envVar: 'CEREBRAS_API_KEY',  cost: { prompt: 0.10, completion: 0.10 } },
+  cerebras:  { tier: 'fast',  baseUrl: 'https://api.cerebras.ai',       format: 'openai',    defaultModel: 'gpt-oss-120b',              envVar: 'CEREBRAS_API_KEY',  cost: { prompt: 0.10, completion: 0.10 } },
   groq:      { tier: 'fast',  baseUrl: 'https://api.groq.com/openai',   format: 'openai',    defaultModel: 'llama-3.3-70b-versatile',   envVar: 'GROQ_API_KEY',      cost: { prompt: 0.27, completion: 0.27 } },
   openai:    { tier: 'smart', baseUrl: 'https://api.openai.com',        format: 'openai',    defaultModel: 'gpt-4o-mini',               envVar: 'OPENAI_API_KEY',    cost: { prompt: 2.50, completion: 10.00 } },
   anthropic: { tier: 'smart', baseUrl: 'https://api.anthropic.com',     format: 'anthropic', defaultModel: 'claude-sonnet-4-5-20250929', envVar: 'ANTHROPIC_API_KEY', cost: { prompt: 3.00, completion: 15.00 } },
@@ -59,7 +59,7 @@ export function resolveProvider(shorthand: string): ProviderConfig {
     model = resolved.slice(slash + 1);
     if (!model) {
       const catalog = PROVIDER_CATALOG[rawName];
-      model = catalog?.defaultModel || 'llama-3.3-70b';
+      model = catalog?.defaultModel || 'gpt-oss-120b';
     }
   }
 
