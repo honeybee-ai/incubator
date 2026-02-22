@@ -61,6 +61,8 @@ export interface AgentsConfig {
   noAcp: boolean;
   propolisPort: number;
   worktree: string;
+  /** Target namespace for agent coordination (default: 'default'). */
+  namespace?: string;
   /** When true, use https:// for INCUBATOR_URL. */
   tls?: boolean;
   /** Unified hive entry point (replaces droneEntry + propolisEntry) */
@@ -205,11 +207,12 @@ export class BroodOrchestrator {
     let poolCtx: PoolContext | undefined;
     if (this.canRunInProcess) {
       this.pool = new AgentPool();
+      const ns = this.config.namespace ?? 'default';
       poolCtx = {
         stores: this.stores!,
         bus: this.bus!,
         registry: this.registry!,
-        namespace: 'default',
+        namespace: ns,
         workDir: worktree,
         guard: null,
         verbose: this.verbose,
@@ -311,9 +314,10 @@ export class BroodOrchestrator {
           ?? 'ollama/qwen3:8b';
 
         const serverProto = config.tls ? 'https' : 'http';
+        const ns = config.namespace ?? 'default';
         const agentArgs = [
           `--server=${serverProto}://localhost:${this.incubatorPort}`,
-          `--namespace=default`,
+          `--namespace=${ns}`,
           `--agent-id=${agentId}`,
           `--role=${agent.role}`,
           `--provider=${providerShorthand}`,
@@ -439,7 +443,7 @@ export class BroodOrchestrator {
             model: modelHint ?? undefined,
             env: {
               INCUBATOR_URL: `${config.tls ? 'https' : 'http'}://localhost:${this.incubatorPort}`,
-              ACP_NAMESPACE: 'default',
+              ACP_NAMESPACE: config.namespace ?? 'default',
               ACP_AGENT_ID: agentId,
               ACP_ROLE: agent.role,
               ...(agent.wakeOn?.types ? { ACP_WAKE_ON: agent.wakeOn.types.join(',') } : {}),
@@ -509,7 +513,7 @@ export class BroodOrchestrator {
       ...config.env,
       INCUBATOR_URL: `${config.tls ? 'https' : 'http'}://localhost:${this.incubatorPort}`,
       ...(config.tls ? { NODE_TLS_REJECT_UNAUTHORIZED: '0' } : {}),
-      ACP_NAMESPACE: 'default',
+      ACP_NAMESPACE: config.namespace ?? 'default',
       ACP_AGENT_ID: agentId,
       ACP_ROLE: agent.role,
     };

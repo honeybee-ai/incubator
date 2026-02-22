@@ -179,7 +179,7 @@ export async function main() {
     try {
       const broodPeek = readFileSync(resolvePath(broodPath), 'utf-8');
       const broodObj = (broodPath.endsWith('.json') ? JSON.parse(broodPeek) : yaml.load(broodPeek)) as Record<string, unknown>;
-      const hives = (broodObj.hives ?? {}) as Record<string, Record<string, unknown>>;
+      const hives = (broodObj.hive ?? broodObj.hives ?? broodObj.namespaces ?? {}) as Record<string, Record<string, unknown>>;
       const firstHive = Object.values(hives)[0];
       const dancesRef = firstHive?.dances ?? firstHive?.logic ?? broodObj.dances ?? broodObj.logic;
       if (typeof dancesRef === 'string') {
@@ -434,80 +434,162 @@ export async function main() {
       // ws not installed or failed to load — WebSocket disabled
     }
 
-    // Brood config: preload agent definitions, spawn on "start" event
+    // Brood config: preload agent definitions per namespace, spawn on "start" event
     if (broodPath) {
       const broodRaw = readFileSync(resolvePath(broodPath), 'utf-8');
       const broodData = (broodPath.endsWith('.json') ? JSON.parse(broodRaw) : yaml.load(broodRaw)) as Record<string, unknown>;
 
-      // Extract agents from first hive
-      const hives = (broodData.hives ?? {}) as Record<string, Record<string, unknown>>;
-      const firstHive = Object.values(hives)[0];
-      const broodAgents = ((firstHive?.agents ?? firstHive?.workers ?? []) as Array<Record<string, unknown>>).map(a => ({
-        role: String(a.role ?? ''),
-        type: (a.type as 'worker' | 'drone' | 'claude' | undefined) ?? 'worker',
-        prompt: typeof a.prompt === 'string' ? a.prompt : undefined,
-        workspace: (a.workspace as 'memfs' | 'real' | undefined),
-        tools: Array.isArray(a.tools) ? a.tools as string[] : undefined,
-        wakeOn: a.wake_on ? {
-          types: (a.wake_on as Record<string, unknown>).types as string[] | undefined,
-          maxWakes: (a.wake_on as Record<string, unknown>).max_wakes as number | undefined,
-        } : undefined,
-      }));
-
-      // Load protocol from brood if specified
-      const specRef = firstHive?.acp ?? firstHive?.spec ?? firstHive?.protocol;
-      if (typeof specRef === 'string' && protocolPath === undefined) {
-        const specPath = resolvePath(dirname(broodPath), specRef);
-        if (existsSync(specPath)) {
-          const specData = await loadSpecFile(specPath);
-          registry.setProtocol('default', specData);
-          console.error(`[incubator] Protocol loaded from brood: ${specRef}`);
-
-          // Auto-derive agents from spec roles when brood has no explicit agents
-          if (broodAgents.length === 0 && specData.roles) {
-            for (const [roleName, roleDef] of Object.entries(specData.roles)) {
-              const count = typeof roleDef.agents === 'number' ? roleDef.agents : 1;
-              for (let i = 0; i < count; i++) {
-                broodAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, wakeOn: undefined });
-              }
-            }
-            console.error(`[incubator] Derived ${broodAgents.length} agents from spec roles`);
-          }
-        }
-      }
-
+      // Accept hive (canonical), hives (deprecated), namespaces (alias)
+      const hivesMap = (broodData.hive ?? broodData.hives ?? broodData.namespaces ?? {}) as Record<string, Record<string, unknown>>;
       const stagger = typeof broodData.stagger === 'number' ? broodData.stagger : 0;
       const broodProvider = typeof broodData.provider === 'string' ? broodData.provider : 'ollama/qwen3:8b';
       const broodEnv = (broodData.env ?? {}) as Record<string, string>;
+      const broodModels = (broodData.models && typeof broodData.models === 'object' && !Array.isArray(broodData.models))
+        ? broodData.models as Record<string, string> : undefined;
 
       // Resolve hive entry point (agent CLI within incubator)
       const __dirname_brood = dirname(fileURLToPath(import.meta.url));
       const hiveEntryPath = join(__dirname_brood, 'agent', 'cli.js');
 
-      console.error(`[incubator] Brood loaded: ${broodAgents.length} agents (${broodProvider}), waiting for "start" event`);
+      // Queen config (parse + log, actual agent spawn is follow-up)
+      const queenRaw = broodData.queen as Record<string, unknown> | undefined;
+      if (queenRaw && typeof queenRaw === 'object') {
+        const queenProvider = typeof queenRaw.provider === 'string' ? queenRaw.provider : broodProvider;
+        console.error(`[incubator] Queen configured: provider=${queenProvider}`);
+      }
 
-      // Subscribe to bus — spawn agents when "start" event fires
+      // Schedule config (hive-wide interval tick)
+      let scheduleTimer: ReturnType<typeof setInterval> | undefined;
+      const scheduleRaw = broodData.schedule as Record<string, unknown> | undefined;
+      if (scheduleRaw && typeof scheduleRaw.every === 'string') {
+        // Parse duration inline (simple h/m/s)
+        const durationStr = scheduleRaw.every;
+        const dm = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(durationStr);
+        if (dm && (dm[1] || dm[2] || dm[3])) {
+          const ms = (parseInt(dm[1] || '0', 10) * 3600 + parseInt(dm[2] || '0', 10) * 60 + parseInt(dm[3] || '0', 10)) * 1000;
+          if (ms >= 10_000) {
+            scheduleTimer = setInterval(() => {
+              const defaultStores = registry.get('default');
+              defaultStores.events.publish('schedule.tick', { interval: durationStr }, 'system:schedule').then(evt => {
+                bus.publish('default', evt);
+              }).catch(() => {});
+            }, ms);
+            console.error(`[incubator] Schedule: tick every ${durationStr}`);
+          }
+        }
+      }
+
+      // Top-level events config (canonical) or honeycomb (deprecated) → TopicRouter
+      const topLevelEvents = (broodData.events ?? broodData.honeycomb) as Record<string, Record<string, unknown>> | undefined;
+
+      // Per-namespace setup: load protocols, extract agents, register events
+      interface NsAgentMap {
+        namespace: string;
+        agents: Array<{
+          role: string;
+          type: 'worker' | 'drone' | 'claude';
+          prompt: string | undefined;
+          workspace: 'memfs' | 'real' | undefined;
+          tools: string[] | undefined;
+          wakeOn: { types?: string[]; maxWakes?: number } | undefined;
+        }>;
+      }
+      const namespaceAgents: NsAgentMap[] = [];
+
+      for (const [nsName, nsConfig] of Object.entries(hivesMap)) {
+        // Extract agents
+        const rawAgents = ((nsConfig.agents ?? nsConfig.workers ?? []) as Array<Record<string, unknown>>).map(a => ({
+          role: String(a.role ?? ''),
+          type: (a.type as 'worker' | 'drone' | 'claude' | undefined) ?? 'worker' as const,
+          prompt: typeof a.prompt === 'string' ? a.prompt : undefined,
+          workspace: (a.workspace as 'memfs' | 'real' | undefined),
+          tools: Array.isArray(a.tools) ? a.tools as string[] : undefined,
+          wakeOn: a.wake_on ? {
+            types: (a.wake_on as Record<string, unknown>).types as string[] | undefined,
+            maxWakes: (a.wake_on as Record<string, unknown>).max_wakes as number | undefined,
+          } : undefined,
+        }));
+
+        // Load protocol from brood if specified (and not already loaded via --protocol)
+        const specRef = nsConfig.acp ?? nsConfig.spec ?? nsConfig.protocol;
+        if (typeof specRef === 'string' && protocolPath === undefined) {
+          const specPath = resolvePath(dirname(broodPath), specRef);
+          if (existsSync(specPath)) {
+            const specData = await loadSpecFile(specPath);
+            registry.setProtocol(nsName, specData);
+            // Also set as 'default' if this is the first/only namespace
+            if (Object.keys(hivesMap).length === 1) {
+              registry.setProtocol('default', specData);
+            }
+            console.error(`[incubator] Protocol loaded for "${nsName}": ${specRef}`);
+
+            // Auto-derive agents from spec roles when brood has no explicit agents
+            if (rawAgents.length === 0 && specData.roles) {
+              for (const [roleName, roleDef] of Object.entries(specData.roles)) {
+                const count = typeof roleDef.agents === 'number' ? roleDef.agents : 1;
+                for (let i = 0; i < count; i++) {
+                  rawAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, wakeOn: undefined });
+                }
+              }
+              console.error(`[incubator] Derived ${rawAgents.length} agents from spec roles for "${nsName}"`);
+            }
+          }
+        }
+
+        // Register per-namespace events with TopicRouter
+        const nsEvents = (nsConfig.events ?? nsConfig.honeycomb ?? nsConfig.comb) as Record<string, unknown> | undefined;
+        const eventsCfg = nsEvents ?? (topLevelEvents?.[nsName] as Record<string, unknown> | undefined);
+        if (eventsCfg) {
+          const pubs = Array.isArray(eventsCfg.publishes) ? eventsCfg.publishes.filter((x: unknown): x is string => typeof x === 'string') : [];
+          const subs = Array.isArray(eventsCfg.subscribes) ? eventsCfg.subscribes.filter((x: unknown): x is string => typeof x === 'string') : [];
+          const router = registry.getRouter();
+          if (router) {
+            for (const topic of pubs) router.publish(nsName, topic);
+            for (const topic of subs) router.subscribe(nsName, topic);
+            router.watch(nsName);
+            if (pubs.length || subs.length) {
+              console.error(`[incubator] Events for "${nsName}": publishes=[${pubs.join(',')}] subscribes=[${subs.join(',')}]`);
+            }
+          }
+        }
+
+        if (rawAgents.length > 0) {
+          namespaceAgents.push({ namespace: nsName, agents: rawAgents });
+        }
+      }
+
+      const totalAgents = namespaceAgents.reduce((sum, ns) => sum + ns.agents.length, 0);
+      const nsNames = Object.keys(hivesMap);
+      console.error(`[incubator] Brood loaded: ${nsNames.length} namespace(s), ${totalAgents} agents (${broodProvider}), waiting for "start" event`);
+
+      // Subscribe to bus — spawn orchestrators per namespace when "start" event fires
       let gameRunning = false;
+      // Listen on 'default' bus for start/reset (backwards compat)
       bus.subscribe('default', (event) => {
         if (event.type === 'start' && !gameRunning) {
           gameRunning = true;
           console.error('[orchestrator] Start event received, spawning agents...');
-          const config: AgentsConfig = {
-            provider: broodProvider,
-            stagger,
-            noAcp: false,
-            propolisPort: 0,
-            worktree: process.cwd(),
-            hiveEntry: hiveEntryPath,
-            tls: useTls,
-            env: broodEnv,
-            agents: broodAgents,
-          };
-          const orch = new BroodOrchestrator(config, port, bus, defaultStoresForWatcher.runs, verbose, defaultStoresForWatcher, registry, danceSupport?.module, telemetry, pluginManager, sessionStore);
-          orch.start().catch(err => {
-            console.error(`[orchestrator] Spawn failed: ${(err as Error).message}`);
-          });
-          spawnedOrchestrators.push(orch);
+          for (const nsEntry of namespaceAgents) {
+            const nsStores = registry.get(nsEntry.namespace);
+            const config: AgentsConfig = {
+              provider: broodProvider,
+              stagger,
+              noAcp: false,
+              propolisPort: 0,
+              worktree: process.cwd(),
+              namespace: nsEntry.namespace,
+              hiveEntry: hiveEntryPath,
+              tls: useTls,
+              env: broodEnv,
+              agents: nsEntry.agents,
+              models: broodModels,
+            };
+            const orch = new BroodOrchestrator(config, port, bus, nsStores.runs, verbose, nsStores, registry, danceSupport?.module, telemetry, pluginManager, sessionStore);
+            orch.start().catch(err => {
+              console.error(`[orchestrator] Spawn failed for "${nsEntry.namespace}": ${(err as Error).message}`);
+            });
+            spawnedOrchestrators.push(orch);
+          }
         }
         // Reset — shut down running agents, clear sessions, allow new game
         if (event.type === 'reset') {

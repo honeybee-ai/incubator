@@ -15,6 +15,9 @@ import type { IncubatorEvent } from './types.js';
 import type { ProtocolSpec } from '@agentcoordinationprotocol/spec';
 import type { HoneycombTransport, TopicEvent } from './transports/types.js';
 
+// Re-export with new canonical names (old names kept for backwards compat)
+export type { HoneycombTransport, HoneycombTransport as EventTransport } from './transports/types.js';
+
 const HONEYCOMB_PREFIX = 'honeycomb:';
 
 export interface TopicRouterOptions {

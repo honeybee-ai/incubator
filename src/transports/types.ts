@@ -24,6 +24,9 @@ export interface HoneycombTransport {
   close(): Promise<void>;
 }
 
+/** @deprecated Use HoneycombTransport. Alias kept for the events: rename transition. */
+export type EventTransport = HoneycombTransport;
+
 /** Wire protocol messages (NDJSON over Unix socket). */
 export type BrokerMessage =
   | { type: 'register'; hive: string; publishes: string[]; subscribes: string[] }
