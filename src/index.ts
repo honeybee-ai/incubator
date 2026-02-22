@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+declare const INCUBATOR_VERSION: string;
+
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
@@ -45,6 +47,48 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 
 export async function main() {
   const args = parseArgs(process.argv);
+
+  // Early exit for --version / --help
+  if (args['version'] === true || args['v'] === true) {
+    if (typeof INCUBATOR_VERSION !== 'undefined') {
+      console.log(INCUBATOR_VERSION);
+    } else {
+      const { readFileSync } = await import('node:fs');
+      const { join, dirname } = await import('node:path');
+      const pkgPath = join(dirname(new URL(import.meta.url).pathname), '..', 'package.json');
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      console.log(pkg.version);
+    }
+    process.exit(0);
+  }
+
+  if (args['help'] === true || args['h'] === true) {
+    console.log(`incubator - Agent coordination engine
+
+USAGE:
+  incubator [options]
+
+OPTIONS:
+  --port=N           Listen port (default: 3100)
+  --mode=TYPE        'http' (default) or 'mcp'
+  --brood=PATH       Brood YAML config
+  --dances=PATH      Dance file (ESM module)
+  --static=DIR       Serve static directory
+  --protocol=PATH    Load ACP protocol YAML
+  --backend=TYPE     'memory' (default), 'sqlite', or 'redis'
+  --db=PATH          SQLite database path
+  --redis-url=URL    Redis URL
+  --persist=PATH     JSON snapshot path (memory backend)
+  --tls-cert=PATH    TLS certificate (fullchain.pem)
+  --tls-key=PATH     TLS private key
+  --verbose          Enable debug logging
+  --log-format=FMT   'text' (default) or 'json'
+  --no-guard         Disable Carapace scanning
+  --version, -v      Show version
+  --help, -h         Show this help`);
+    process.exit(0);
+  }
+
   // --mode=http (default) or --mode=mcp. Legacy --http flag still works.
   const mode = typeof args['mode'] === 'string' ? args['mode'] : (args['http'] === true ? 'http' : 'http');
   if (mode !== 'http' && mode !== 'mcp') {

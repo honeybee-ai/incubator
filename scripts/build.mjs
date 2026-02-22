@@ -31,6 +31,9 @@ await build({
     // Propolis (optional, private — loaded dynamically via PluginManager)
     '@honeybee-ai/propolis',
   ],
+  define: {
+    INCUBATOR_VERSION: JSON.stringify(pkg.version),
+  },
   banner: {
     js: `#!/usr/bin/env node
 /**
