@@ -40,7 +40,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: npm install -g npm@latest
+          registry-url: https://registry.npmjs.org
       - run: pnpm install
       - run: pnpm run build
       # --provenance requires public source repo; add back when repo goes public
