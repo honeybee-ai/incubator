@@ -30,9 +30,6 @@ importers:
       '@honeybee-ai/hivemind-sdk':
         specifier: ^0.2.13
         version: 0.2.13
-      '@honeybee-ai/propolis':
-        specifier: ^0.1.0
-        version: 0.1.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.26.0(zod@3.25.76)
@@ -279,10 +276,6 @@ packages:
   '@honeybee-ai/hivemind-sdk@0.2.13':
     resolution: {integrity: sha512-HWkMVGA4zCCfb79S0eMWUIQrQh7SmjrAiWlxkFz5OMPmWmxfhyqD3tSqwsDE/lim0ola5/1ABOEBNI9xEfcmnQ==}
     engines: {node: '>=20'}
-
-  '@honeybee-ai/propolis@0.1.0':
-    resolution: {integrity: sha512-5lE/ypBbr6ICyp19Rm95MbLDebXPA5D6xAF70/Xk+EZ23qmra6OEO7Ld0YeyEuQXVFJ/Y8TbtSvYNG3su1vguA==}
-    engines: {node: '>=18'}
 
   '@hono/node-server@1.19.9':
     resolution: {integrity: sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw==}
@@ -1017,9 +1010,6 @@ packages:
     resolution: {integrity: sha512-+CGM1L1CgmtheLcBuleyYOn7NWPVu0s0EJH2C4puxgEZb9h8QpR9G2dBfZJOAUhi7VQxuBPMd0hiISWcTyiYyQ==}
     engines: {node: '>=10'}
 
-  node-addon-api@7.1.1:
-    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
-
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
     engines: {node: '>=10.5.0'}
@@ -1033,9 +1023,6 @@ packages:
     peerDependenciesMeta:
       encoding:
         optional: true
-
-  node-pty@1.1.0:
-    resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -1537,13 +1524,6 @@ snapshots:
   '@honeybee-ai/hivemind-sdk@0.2.13':
     dependencies:
       zod: 3.25.76
-
-  '@honeybee-ai/propolis@0.1.0':
-    dependencies:
-      '@honeybee-ai/carapace': 1.0.2
-      zod: 3.25.76
-    optionalDependencies:
-      node-pty: 1.1.0
 
   '@hono/node-server@1.19.9(hono@4.11.9)':
     dependencies:
@@ -2271,19 +2251,11 @@ snapshots:
       semver: 7.7.4
     optional: true
 
-  node-addon-api@7.1.1:
-    optional: true
-
   node-domexception@1.0.0: {}
 
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
-
-  node-pty@1.1.0:
-    dependencies:
-      node-addon-api: 7.1.1
-    optional: true
 
   object-assign@4.1.1: {}
 

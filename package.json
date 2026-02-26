@@ -1,6 +1,6 @@
 {
   "name": "@honeybee-ai/incubator",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "Give your agent swarm shared memory. MCP server + REST API for multi-agent coordination.",
   "type": "module",
   "main": "dist/index.js",
@@ -102,7 +102,6 @@
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
     "@honeybee-ai/carapace": "^1.0.1",
     "@honeybee-ai/hivemind-sdk": "^0.2.13",
-    "@honeybee-ai/propolis": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "groq-sdk": "^0.37.0",
     "js-yaml": "^4.1.1",
