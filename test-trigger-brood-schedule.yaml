@@ -1,0 +1,22 @@
+name: trigger-schedule-test
+provider: ollama/qwen3:8b
+
+schedule:
+  every: 2s
+
+hive:
+  default:
+    agents:
+      - role: worker
+        type: mock
+        count: 2
+        mock:
+          actions:
+            - tool: set_state
+              args: { key: "ping", value: "pong" }
+    events:
+      on:
+        agents.complete: spawn
+      schedule:
+        every: 2s
+        action: spawn

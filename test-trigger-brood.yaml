@@ -1,0 +1,13 @@
+name: trigger-smoke-test
+provider: ollama/qwen3:8b
+
+hive:
+  default:
+    agents:
+      - role: worker
+        type: mock
+        count: 2
+        mock:
+          actions:
+            - tool: set_state
+              args: { key: "ping", value: "pong" }

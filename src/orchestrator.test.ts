@@ -479,5 +479,64 @@ describe('BroodOrchestrator', () => {
         expect(child.kill).toHaveBeenCalledWith('SIGTERM');
       }
     });
+
+    it('publishes agents.complete when all child process agents exit', async () => {
+      const stores = registry.get('default');
+      const publishSpy = vi.spyOn(stores.events, 'publish');
+      const config = makeConfig({
+        stagger: 0,
+        agents: [
+          { role: 'drone_a', type: 'drone', count: 1 },
+          { role: 'drone_b', type: 'drone', count: 1 },
+        ],
+      });
+      const orch = new BroodOrchestrator(config, 3100, bus, stores.runs, false, stores, registry);
+      await orch.start();
+
+      // Simulate propolis + 2 drones spawned
+      // Find the drone child processes (skip propolis at index 0)
+      const droneChildren = spawnMock.mock.results.filter((_: unknown, i: number) => i > 0);
+      expect(droneChildren.length).toBe(2);
+
+      publishSpy.mockClear();
+
+      // Simulate first drone exit — should NOT fire agents.complete yet
+      droneChildren[0].value.emit('exit', 0, null);
+      await new Promise(r => setTimeout(r, 50));
+      expect(publishSpy).not.toHaveBeenCalledWith(
+        'agents.complete', expect.anything(), expect.anything()
+      );
+
+      // Simulate second drone exit — NOW it should fire
+      droneChildren[1].value.emit('exit', 0, null);
+      await new Promise(r => setTimeout(r, 50));
+      expect(publishSpy).toHaveBeenCalledWith(
+        'agents.complete',
+        expect.objectContaining({ total: 2, exited: 2 }),
+        'system:orchestrator',
+      );
+
+      publishSpy.mockRestore();
+      await orch.shutdown();
+    });
+
+    it('does not publish agents.complete with zero spawned agents', async () => {
+      const stores = registry.get('default');
+      const publishSpy = vi.spyOn(stores.events, 'publish');
+      const config = makeConfig({
+        stagger: 0,
+        agents: [],
+      });
+      const orch = new BroodOrchestrator(config, 3100, bus, stores.runs, false, stores, registry);
+      await orch.start();
+
+      await new Promise(r => setTimeout(r, 50));
+      expect(publishSpy).not.toHaveBeenCalledWith(
+        'agents.complete', expect.anything(), expect.anything()
+      );
+
+      publishSpy.mockRestore();
+      await orch.shutdown();
+    });
   });
 });

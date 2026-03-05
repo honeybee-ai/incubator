@@ -1,0 +1,17 @@
+name: live-schedule-test
+provider: ollama/qwen3:8b
+
+hive:
+  default:
+    agents:
+      - role: worker
+        type: mock
+        count: 1
+        mock:
+          actions:
+            - tool: set_state
+              args: { key: "heartbeat", value: "alive" }
+    events:
+      schedule:
+        every: 10s
+        action: spawn

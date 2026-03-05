@@ -290,6 +290,9 @@ export class TriggerEngine {
       case 'webhook':
         await this.actionWebhook(event, config);
         break;
+      case 'spawn':
+        await this.actionSpawnAgents(event);
+        break;
       default:
         console.error(`[triggers] Unknown action "${action}" for event "${event.type}"`);
     }
@@ -337,6 +340,18 @@ export class TriggerEngine {
       `${TRIGGER_PREFIX}publish`,
     );
     this.bus.publish(this.namespace, published);
+  }
+
+  private async actionSpawnAgents(event: IncubatorEvent): Promise<void> {
+    // Publish 'start' on the bus — the orchestrator's bus subscriber handles the actual spawn.
+    // If agents are already running, the orchestrator's gameRunning guard will skip.
+    const published = await this.stores.events.publish(
+      'start',
+      { source: event.type, trigger: 'spawn' },
+      `${TRIGGER_PREFIX}spawn`,
+    );
+    this.bus.publish(this.namespace, published);
+    console.error(`[triggers] spawn: published 'start' (triggered by ${event.type})`);
   }
 
   private async actionWebhook(event: IncubatorEvent, config?: Record<string, string>): Promise<void> {

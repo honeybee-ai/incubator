@@ -27,7 +27,7 @@ import { PluginManager } from './plugins/index.js';
 import type { TopicRouterOptions } from './honeycomb.js';
 import type { HoneycombTransport } from './transports/types.js';
 import { RunWatcher } from './run-watcher.js';
-import { BroodOrchestrator, type AgentsConfig } from './orchestrator.js';
+import { BroodOrchestrator, type AgentsConfig, type MockBehavior } from './orchestrator.js';
 import { WebhookManager } from './webhooks.js';
 import { setLogFormat, setLogLevel, type LogFormat } from './log.js';
 import { createTelemetryFromEnv, type TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
@@ -478,6 +478,10 @@ OPTIONS:
       // ws not installed or failed to load — WebSocket disabled
     }
 
+    // Brood trigger config — populated inside brood block, consumed by TriggerEngine later
+    const broodTriggerSchedule: Record<string, { every: string; action: string }> = {};
+    const broodTriggerOn: Record<string, string> = {};
+
     // Brood config: preload agent definitions per namespace, spawn on "start" event
     if (broodPath) {
       const broodRaw = readFileSync(resolvePath(broodPath), 'utf-8');
@@ -502,25 +506,16 @@ OPTIONS:
         console.error(`[incubator] Queen configured: provider=${queenProvider}`);
       }
 
-      // Schedule config (hive-wide interval tick)
-      let scheduleTimer: ReturnType<typeof setInterval> | undefined;
+      // Extract trigger config from brood for TriggerEngine (wired later)
+      // Top-level schedule: → TriggerEngine schedule entry "_tick"
       const scheduleRaw = broodData.schedule as Record<string, unknown> | undefined;
       if (scheduleRaw && typeof scheduleRaw.every === 'string') {
-        // Parse duration inline (simple h/m/s)
-        const durationStr = scheduleRaw.every;
-        const dm = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(durationStr);
-        if (dm && (dm[1] || dm[2] || dm[3])) {
-          const ms = (parseInt(dm[1] || '0', 10) * 3600 + parseInt(dm[2] || '0', 10) * 60 + parseInt(dm[3] || '0', 10)) * 1000;
-          if (ms >= 10_000) {
-            scheduleTimer = setInterval(() => {
-              const defaultStores = registry.get('default');
-              defaultStores.events.publish('schedule.tick', { interval: durationStr }, 'system:schedule').then(evt => {
-                bus.publish('default', evt);
-              }).catch(() => {});
-            }, ms);
-            console.error(`[incubator] Schedule: tick every ${durationStr}`);
-          }
-        }
+        (broodTriggerSchedule as Record<string, unknown>)['_tick'] = {
+          every: scheduleRaw.every,
+          action: 'publish',
+          config: { type: 'schedule.tick' },
+        };
+        console.error(`[incubator] Schedule: tick every ${scheduleRaw.every} (via TriggerEngine)`);
       }
 
       // Top-level events config (canonical) or honeycomb (deprecated) → TopicRouter
@@ -531,10 +526,12 @@ OPTIONS:
         namespace: string;
         agents: Array<{
           role: string;
-          type: 'worker' | 'drone' | 'claude';
+          count?: number;
+          type: 'worker' | 'drone' | 'claude' | 'mock';
           prompt: string | undefined;
           workspace: 'memfs' | 'real' | undefined;
           tools: string[] | undefined;
+          mock?: MockBehavior;
           wakeOn: { types?: string[]; maxWakes?: number } | undefined;
         }>;
       }
@@ -544,10 +541,12 @@ OPTIONS:
         // Extract agents
         const rawAgents = ((nsConfig.agents ?? nsConfig.workers ?? []) as Array<Record<string, unknown>>).map(a => ({
           role: String(a.role ?? ''),
-          type: (a.type as 'worker' | 'drone' | 'claude' | undefined) ?? 'worker' as const,
+          count: typeof a.count === 'number' ? a.count : undefined,
+          type: (a.type as 'worker' | 'drone' | 'claude' | 'mock' | undefined) ?? 'worker' as const,
           prompt: typeof a.prompt === 'string' ? a.prompt : undefined,
           workspace: (a.workspace as 'memfs' | 'real' | undefined),
           tools: Array.isArray(a.tools) ? a.tools as string[] : undefined,
+          mock: a.mock ? (a.mock as MockBehavior) : undefined,
           wakeOn: a.wake_on ? {
             types: (a.wake_on as Record<string, unknown>).types as string[] | undefined,
             maxWakes: (a.wake_on as Record<string, unknown>).max_wakes as number | undefined,
@@ -572,7 +571,7 @@ OPTIONS:
               for (const [roleName, roleDef] of Object.entries(specData.roles)) {
                 const count = typeof roleDef.agents === 'number' ? roleDef.agents : 1;
                 for (let i = 0; i < count; i++) {
-                  rawAgents.push({ role: roleName, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, wakeOn: undefined });
+                  rawAgents.push({ role: roleName, count: undefined, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, mock: undefined, wakeOn: undefined });
                 }
               }
               console.error(`[incubator] Derived ${rawAgents.length} agents from spec roles for "${nsName}"`);
@@ -594,6 +593,26 @@ OPTIONS:
             if (pubs.length || subs.length) {
               console.error(`[incubator] Events for "${nsName}": publishes=[${pubs.join(',')}] subscribes=[${subs.join(',')}]`);
             }
+          }
+        }
+
+        // Extract event triggers (on: { "event_type": "action" }) for TriggerEngine
+        if (eventsCfg) {
+          const onConfig = eventsCfg.on as Record<string, string> | undefined;
+          if (onConfig && typeof onConfig === 'object') {
+            for (const [eventType, action] of Object.entries(onConfig)) {
+              if (typeof eventType === 'string' && typeof action === 'string') {
+                broodTriggerOn[eventType] = action;
+              }
+            }
+          }
+          // Per-namespace schedule overrides top-level
+          const nsSchedule = eventsCfg.schedule as Record<string, unknown> | undefined;
+          if (nsSchedule && typeof nsSchedule.every === 'string') {
+            broodTriggerSchedule[`_${nsName}`] = {
+              every: nsSchedule.every,
+              action: typeof nsSchedule.action === 'string' ? nsSchedule.action : 'publish',
+            };
           }
         }
 
@@ -634,6 +653,13 @@ OPTIONS:
             });
             spawnedOrchestrators.push(orch);
           }
+        }
+        // Agents completed — allow restart via trigger or manual start
+        if (event.type === 'agents.complete' && gameRunning) {
+          gameRunning = false;
+          spawnedOrchestrators.length = 0;
+          sessionStore.clear();
+          console.error('[orchestrator] Agents completed — ready for restart');
         }
         // Reset — shut down running agents, clear sessions, allow new game
         if (event.type === 'reset') {
@@ -717,6 +743,8 @@ OPTIONS:
     }
 
     // ─── Trigger Engine ──────────────────────────────────────
+    // Merges brood config (schedule:, events.on:) with env var config (HONEYCOMB_*).
+    // Env vars override brood config for backwards compat.
     let triggerEngine: TriggerEngine | undefined;
     try {
       const honeycombTriggers = process.env['HONEYCOMB_TRIGGERS'];
@@ -724,26 +752,34 @@ OPTIONS:
       const honeycombCompute = process.env['HONEYCOMB_COMPUTE'];
       const honeycombRegion = process.env['HONEYCOMB_REGION'];
 
-      const hasTriggers = honeycombTriggers || honeycombSchedule || honeycombCompute;
+      // Start with brood config
+      let mergedOn: Record<string, string> = { ...broodTriggerOn };
+      let mergedSchedule: Record<string, { every: string; action: string }> = { ...broodTriggerSchedule };
+
+      // Env vars override (higher priority)
+      if (honeycombTriggers) {
+        try {
+          const envOn = JSON.parse(honeycombTriggers) as Record<string, string>;
+          mergedOn = { ...mergedOn, ...envOn };
+        } catch {
+          console.error('[incubator] Failed to parse HONEYCOMB_TRIGGERS JSON');
+        }
+      }
+      if (honeycombSchedule) {
+        try {
+          const envSchedule = JSON.parse(honeycombSchedule) as Record<string, { every: string; action: string }>;
+          mergedSchedule = { ...mergedSchedule, ...envSchedule };
+        } catch {
+          console.error('[incubator] Failed to parse HONEYCOMB_SCHEDULE JSON');
+        }
+      }
+
+      const hasTriggers = Object.keys(mergedOn).length > 0 || Object.keys(mergedSchedule).length > 0 || honeycombCompute;
       if (hasTriggers) {
-        let parsedOn: Record<string, unknown> | undefined;
-        let parsedSchedule: Record<string, unknown> | undefined;
-
-        if (honeycombTriggers) {
-          try { parsedOn = JSON.parse(honeycombTriggers); } catch {
-            console.error('[incubator] Failed to parse HONEYCOMB_TRIGGERS JSON');
-          }
-        }
-        if (honeycombSchedule) {
-          try { parsedSchedule = JSON.parse(honeycombSchedule); } catch {
-            console.error('[incubator] Failed to parse HONEYCOMB_SCHEDULE JSON');
-          }
-        }
-
         const triggerConfig: TriggerEngineConfig = {
           namespace: 'default',
-          on: parsedOn as TriggerEngineConfig['on'],
-          schedule: parsedSchedule as TriggerEngineConfig['schedule'],
+          on: Object.keys(mergedOn).length > 0 ? mergedOn : undefined,
+          schedule: Object.keys(mergedSchedule).length > 0 ? mergedSchedule as TriggerEngineConfig['schedule'] : undefined,
           compute: honeycombCompute,
           region: honeycombRegion,
         };
@@ -778,8 +814,8 @@ OPTIONS:
 
         triggerEngine.start();
 
-        const triggerCount = (parsedOn ? Object.keys(parsedOn).length : 0);
-        const scheduleCount = (parsedSchedule ? Object.keys(parsedSchedule).length : 0);
+        const triggerCount = Object.keys(mergedOn).length;
+        const scheduleCount = Object.keys(mergedSchedule).length;
         const parts: string[] = [];
         if (triggerCount > 0) parts.push(`${triggerCount} event trigger${triggerCount !== 1 ? 's' : ''}`);
         if (scheduleCount > 0) parts.push(`${scheduleCount} schedule${scheduleCount !== 1 ? 's' : ''}`);

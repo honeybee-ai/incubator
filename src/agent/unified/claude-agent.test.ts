@@ -68,14 +68,14 @@ describe('ClaudeAgent', () => {
       agentId: 'c-3',
       role: 'reviewer',
       namespace: 'test-ns',
-      incubatorUrl: 'https://horus.ellyseum.dev:8080',
+      incubatorUrl: 'https://localhost:8080',
       env: { CUSTOM: 'value' },
     }));
 
     expect(queryMock).toHaveBeenCalledTimes(1);
     const callArgs = queryMock.mock.calls[0][0];
     expect(callArgs.options.env).toMatchObject({
-      INCUBATOR_URL: 'https://horus.ellyseum.dev:8080',
+      INCUBATOR_URL: 'https://localhost:8080',
       ACP_NAMESPACE: 'test-ns',
       ACP_AGENT_ID: 'c-3',
       ACP_ROLE: 'reviewer',

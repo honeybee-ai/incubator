@@ -771,3 +771,78 @@ describe('string action shorthand', () => {
     expect(triggers.get('test')).toEqual({ action: 'log' });
   });
 });
+
+// ─── spawn action ─────────────────────────────────────────
+
+describe('spawn action', () => {
+  it('publishes start event on bus when triggered', async () => {
+    const { engine, stores, bus } = createEngine({
+      on: { 'agents.complete': 'spawn' },
+    });
+
+    engine.start();
+
+    // Fire the triggering event
+    const event = mockEvent('agents.complete', 'system:orchestrator');
+    bus.publish('default', event);
+
+    // Wait for async dispatch
+    await vi.waitFor(() => {
+      expect(stores.events.publish).toHaveBeenCalledWith(
+        'start',
+        expect.objectContaining({ source: 'agents.complete', trigger: 'spawn' }),
+        'trigger:spawn',
+      );
+    });
+
+    // Verify bus got the published event
+    expect(bus.listeners.get('default')!.size).toBeGreaterThan(0);
+
+    engine.stop();
+  });
+
+  it('does not fire on events from triggers (loop prevention)', async () => {
+    const { engine, stores, bus } = createEngine({
+      on: { 'agents.complete': 'spawn' },
+    });
+
+    engine.start();
+
+    // Event from a trigger source — should be skipped
+    const event = mockEvent('agents.complete', 'trigger:spawn');
+    bus.publish('default', event);
+
+    // Give time for potential dispatch
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(stores.events.publish).not.toHaveBeenCalled();
+
+    engine.stop();
+  });
+
+  it('works with schedule-triggered spawn', async () => {
+    vi.useFakeTimers();
+
+    const { engine, stores, bus } = createEngine({
+      schedule: {
+        respawn: { every: '10s', action: 'spawn' },
+      },
+    });
+
+    engine.start();
+
+    // Advance past interval
+    vi.advanceTimersByTime(10_000);
+
+    await vi.waitFor(() => {
+      expect(stores.events.publish).toHaveBeenCalledWith(
+        'start',
+        expect.objectContaining({ trigger: 'spawn' }),
+        'trigger:spawn',
+      );
+    });
+
+    engine.stop();
+    vi.useRealTimers();
+  });
+});

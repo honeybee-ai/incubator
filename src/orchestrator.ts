@@ -107,6 +107,11 @@ export class BroodOrchestrator {
   /** Path to write coordination JSONL log (experiment tracing). */
   coordinationLog?: string;
 
+  /** Track total spawned agents and how many have exited (for completion detection). */
+  private totalSpawned = 0;
+  private totalExited = 0;
+  private completionPublished = false;
+
   constructor(
     private config: AgentsConfig,
     private incubatorPort: number,
@@ -207,6 +212,14 @@ export class BroodOrchestrator {
     let poolCtx: PoolContext | undefined;
     if (this.canRunInProcess) {
       this.pool = new AgentPool();
+      this.pool.onExit = (agentId, error) => {
+        this.totalExited++;
+        this.telemetry?.record('agent_exit', {
+          agentId, type: 'worker', exitCode: error ? 1 : 0, inProcess: true,
+        });
+        this.log(`Pool agent ${agentId} exited${error ? ` with error: ${error.message}` : ''}`);
+        this.checkCompletion();
+      };
       const ns = this.config.namespace ?? 'default';
       poolCtx = {
         stores: this.stores!,
@@ -239,6 +252,7 @@ export class BroodOrchestrator {
         if (agentType === 'mock') {
           if (this.pool && poolCtx) {
             const agentId = await this.pool.startMockAgent(agent, agent.mock ?? { actions: [] }, poolCtx);
+            this.totalSpawned++;
             this.childInfo.push({ agentId, role: agent.role, type: 'worker', inProcess: true });
             this.sessionStore?.register(agentId, agent.role);
             this.telemetry?.record('agent_spawn', {
@@ -280,6 +294,7 @@ export class BroodOrchestrator {
           }
 
           const agentId = await this.pool.startAgent(agent, agentPoolCtx);
+          this.totalSpawned++;
           this.childInfo.push({ agentId, role: agent.role, type: 'worker', inProcess: true });
           // Register in session store so REST anti-spoofing knows this ID is taken
           this.sessionStore?.register(agentId, agent.role);
@@ -391,9 +406,12 @@ export class BroodOrchestrator {
           this.telemetry?.record('agent_exit', {
             agentId, role: agent.role, type: agentType, exitCode: code, signal,
           });
+          this.totalExited++;
+          this.checkCompletion();
         });
 
         if (child.pid) {
+          this.totalSpawned++;
           this.children.set(`${agentType}:${agentId}`, child);
           this.childInfo.push({ pid: child.pid, agentId, role: agent.role, type: agentType });
           this.telemetry?.record('agent_spawn', {
@@ -470,8 +488,11 @@ export class BroodOrchestrator {
       this.telemetry?.record('agent_exit', {
         agentId, role: agent.role, type: 'claude', exitCode: 0, signal: null,
       });
+      this.totalExited++;
+      this.checkCompletion();
     })();
 
+    this.totalSpawned++;
     this.childInfo.push({ agentId, role: agent.role, type: 'claude', inProcess: true });
     this.telemetry?.record('agent_spawn', {
       agentId, role: agent.role, type: 'claude', inProcess: true, sdk: true,
@@ -550,15 +571,42 @@ export class BroodOrchestrator {
       this.telemetry?.record('agent_exit', {
         agentId, role: agent.role, type: 'claude', exitCode: code, signal,
       });
+      this.totalExited++;
+      this.checkCompletion();
     });
 
     if (child.pid) {
+      this.totalSpawned++;
       this.children.set(`claude:${agentId}`, child);
       this.childInfo.push({ pid: child.pid, agentId, role: agent.role, type: 'claude' });
       this.telemetry?.record('agent_spawn', {
         agentId, role: agent.role, type: 'claude', pid: child.pid,
       });
       this.log(`Claude ${agentId} (${agent.role}) started (pid ${child.pid})`);
+    }
+  }
+
+  /**
+   * Check if all spawned agents have exited. If so, publish `agents.complete` on the bus.
+   * Called after every agent exit — pool or child process.
+   */
+  private checkCompletion(): void {
+    if (this.completionPublished) return;
+    if (this.totalSpawned === 0 || this.totalExited < this.totalSpawned) return;
+
+    this.completionPublished = true;
+    const ns = this.config.namespace ?? 'default';
+
+    if (this.stores && this.bus) {
+      this.stores.events.publish('agents.complete', {
+        total: this.totalSpawned,
+        exited: this.totalExited,
+      }, 'system:orchestrator').then(event => {
+        this.bus!.publish(ns, event);
+        this.log(`All ${this.totalSpawned} agents completed — published agents.complete`);
+      }).catch(err => {
+        this.log(`Failed to publish agents.complete: ${(err as Error).message}`);
+      });
     }
   }
 

@@ -63,6 +63,8 @@ interface PoolAgent {
 
 export class AgentPool {
   private agents = new Map<string, PoolAgent>();
+  /** Callback fired when any agent promise settles (for completion detection). */
+  onExit?: (agentId: string, error?: Error) => void;
 
   async startAgent(spec: AgentSpec, ctx: PoolContext): Promise<string> {
     const suffix = randomBytes(3).toString('hex');
@@ -156,6 +158,12 @@ export class AgentPool {
       ctx.telemetry?.record('agent_error', { agentId, role: spec.role, error: msg });
     });
 
+    // Notify exit callback on settlement (success or failure)
+    promise.then(
+      () => { this.onExit?.(agentId); },
+      (err: unknown) => { this.onExit?.(agentId, err instanceof Error ? err : new Error(String(err))); },
+    );
+
     this.agents.set(agentId, { promise, runner, runtime, agentId, role: spec.role });
 
     return agentId;
@@ -208,6 +216,12 @@ export class AgentPool {
       runtime.disconnect().catch(() => {});
       toolClient?.close().catch(() => {});
     });
+
+    // Notify exit callback on settlement
+    promise.then(
+      () => { this.onExit?.(agentId); },
+      (err: unknown) => { this.onExit?.(agentId, err instanceof Error ? err : new Error(String(err))); },
+    );
 
     this.agents.set(agentId, { promise, runner: null, runtime, agentId, role: spec.role });
 
