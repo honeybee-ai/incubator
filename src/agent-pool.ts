@@ -82,13 +82,14 @@ export class AgentPool {
     const protocolData = ctx.protocolData ?? this.buildProtocolData(ctx.registry, ctx.namespace, spec.role);
 
     // Create DirectRuntime
+    const maxIter = spec.maxIterations ?? 50;
     const runtimeConfig: DirectRuntimeConfig = {
       stores: ctx.stores,
       bus: ctx.bus,
       namespace: ctx.namespace,
       agentId,
       role: spec.role,
-      maxIterations: 50,
+      maxIterations: maxIter,
       verbose: ctx.verbose,
       danceModule: ctx.danceModule,
       protocolData: protocolData ?? undefined,
@@ -122,7 +123,7 @@ export class AgentPool {
       provider,
       serverUrl: `direct://localhost`,
       namespace: ctx.namespace,
-      maxIterations: 50,
+      maxIterations: maxIter,
       verbose: ctx.verbose,
       mode: 'worker',
       workDir: ctx.workDir,

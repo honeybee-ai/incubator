@@ -57,7 +57,7 @@ checks:
 metrics:
   max_duration_s: 300
 brood: custom/brood.yaml
-provider: cerebras/llama-3.3-70b
+provider: cerebras/gpt-oss-120b
 `);
     tmpDirs.push(join(path, '..'));
 
@@ -70,7 +70,7 @@ provider: cerebras/llama-3.3-70b
     expect(task.checks?.test?.command).toBe('npx vitest run');
     expect(task.metrics?.max_duration_s).toBe(300);
     expect(task.brood).toBe('custom/brood.yaml');
-    expect(task.provider).toBe('cerebras/llama-3.3-70b');
+    expect(task.provider).toBe('cerebras/gpt-oss-120b');
   });
 
   it('throws on missing name', () => {

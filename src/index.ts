@@ -495,6 +495,22 @@ OPTIONS:
       const broodModels = (broodData.models && typeof broodData.models === 'object' && !Array.isArray(broodData.models))
         ? broodData.models as Record<string, string> : undefined;
 
+      // Extract sources (remote only — local paths are in the worktree already)
+      const broodSources = Array.isArray(broodData.sources)
+        ? (broodData.sources as unknown[]).filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+            .map(s => ({
+              ...(typeof s.url === 'string' ? { url: s.url } : {}),
+              ...(typeof s.git === 'string' ? { git: s.git } : {}),
+              ...(typeof s.scrape === 'string' ? { scrape: s.scrape } : {}),
+              ...(typeof s.as === 'string' ? { as: s.as } : {}),
+              ...(typeof s.ref === 'string' ? { ref: s.ref } : {}),
+              ...(typeof s.path === 'string' ? { path: s.path } : {}),
+            }))
+        : undefined;
+      const broodIgnorePatterns = Array.isArray(broodData.ignore)
+        ? (broodData.ignore as unknown[]).filter((s): s is string => typeof s === 'string')
+        : undefined;
+
       // Resolve hive entry point (agent CLI within incubator)
       const __dirname_brood = dirname(fileURLToPath(import.meta.url));
       const hiveEntryPath = join(__dirname_brood, 'agent', 'cli.js');
@@ -547,6 +563,7 @@ OPTIONS:
           workspace: (a.workspace as 'memfs' | 'real' | undefined),
           tools: Array.isArray(a.tools) ? a.tools as string[] : undefined,
           mock: a.mock ? (a.mock as MockBehavior) : undefined,
+          maxIterations: typeof a.max_iterations === 'number' ? a.max_iterations : undefined,
           wakeOn: a.wake_on ? {
             types: (a.wake_on as Record<string, unknown>).types as string[] | undefined,
             maxWakes: (a.wake_on as Record<string, unknown>).max_wakes as number | undefined,
@@ -571,7 +588,7 @@ OPTIONS:
               for (const [roleName, roleDef] of Object.entries(specData.roles)) {
                 const count = typeof roleDef.agents === 'number' ? roleDef.agents : 1;
                 for (let i = 0; i < count; i++) {
-                  rawAgents.push({ role: roleName, count: undefined, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, mock: undefined, wakeOn: undefined });
+                  rawAgents.push({ role: roleName, count: undefined, type: 'worker' as const, prompt: undefined, workspace: undefined, tools: undefined, mock: undefined, maxIterations: undefined, wakeOn: undefined });
                 }
               }
               console.error(`[incubator] Derived ${rawAgents.length} agents from spec roles for "${nsName}"`);
@@ -646,6 +663,8 @@ OPTIONS:
               env: broodEnv,
               agents: nsEntry.agents,
               models: broodModels,
+              sources: broodSources,
+              ignorePatterns: broodIgnorePatterns,
             };
             const orch = new BroodOrchestrator(config, port, bus, nsStores.runs, verbose, nsStores, registry, danceSupport?.module, telemetry, pluginManager, sessionStore);
             orch.start().catch(err => {

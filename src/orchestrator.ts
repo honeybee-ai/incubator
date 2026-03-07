@@ -41,6 +41,8 @@ export interface AgentSpec {
   pluginDir?: string | null;
   startOn?: { conditions: Array<{ event: string; count: number }>; timeout: number } | null;
   wakeOn?: { types?: string[] | null; timeout?: number; maxWakes?: number } | null;
+  /** Max LLM iterations before the agent stops. Default: 50. */
+  maxIterations?: number;
   /** Mock behavior for type: 'mock' agents. */
   mock?: MockBehavior | null;
   /** Workspace backend: 'memfs' for in-memory filesystem, 'real' for disk (default). */
@@ -77,6 +79,10 @@ export interface AgentsConfig {
   env?: Record<string, string>;
   /** Apiary VPS config for memfs remote shell. Secret comes from APIARY_SECRET env. */
   apiary?: ApiaryConfig;
+  /** Remote sources to fetch into workspace on each spawn cycle. */
+  sources?: Array<{ url?: string; git?: string; scrape?: string; as?: string; ref?: string; path?: string }>;
+  /** Gitignore-style ignore patterns for local source seeding. */
+  ignorePatterns?: string[];
 }
 
 export interface AgentInfo {
@@ -707,6 +713,15 @@ export class BroodOrchestrator {
       const memfs = new MemFS();
       memfs.seedFromDir(worktree);
       this.log(`MemFS seeded from ${worktree} (${memfs.fileCount} files)`);
+
+      // Log remote sources (not fetched locally — Colony handles server-side)
+      if (this.config.sources && this.config.sources.length > 0) {
+        const remoteCount = this.config.sources.filter(s => s.url || s.git || s.scrape).length;
+        if (remoteCount > 0) {
+          this.log(`${remoteCount} remote source(s) in brood.yaml — skipped in local mode (deploy to Colony for live data)`);
+        }
+      }
+
       return memfs;
     } catch (err) {
       this.log(`Failed to create MemFS: ${(err as Error).message}`);

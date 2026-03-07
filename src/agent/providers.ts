@@ -41,7 +41,7 @@ export function resolveProvider(shorthand: string): ProviderConfig {
   let model: string;
 
   if (slash === -1) {
-    // Provider-only: "cerebras" → "cerebras/llama-3.3-70b"
+    // Provider-only: "cerebras" → "cerebras/gpt-oss-120b"
     rawName = resolved;
     const catalog = PROVIDER_CATALOG[rawName];
     if (!catalog) {
