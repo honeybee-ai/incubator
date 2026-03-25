@@ -97,11 +97,11 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@agentcoordinationprotocol/sdk": "*",
-    "@agentcoordinationprotocol/spec": "*",
+    "@agentcoordinationprotocol/sdk": "^0.1.0",
+    "@agentcoordinationprotocol/spec": "^0.2.0",
     "@anthropic-ai/sdk": "^0.74.0",
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
-    "@honeybee-ai/carapace": "*",
+    "@honeybee-ai/carapace": "^1.0.0",
     "@honeybee-ai/hivemind-sdk": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "groq-sdk": "^0.37.0",
