@@ -164,7 +164,7 @@ describe('ControlStore', () => {
   it('publishes agent.halted event', async () => {
     const { events, control } = setup();
     await control.halt('bad agent', 'admin', 'failed', 'agent_1');
-    const { events: evts } = await events.getEvents(undefined, 'honeybee.agent.halted');
+    const { events: evts } = await events.getEvents(undefined, 'agent.halted');
     expect(evts.length).toBe(1);
     expect(evts[0].data).toEqual({ agent: 'agent_1', reason: 'bad agent', status: 'failed', halted_by: 'admin' });
   });
@@ -180,7 +180,7 @@ describe('ControlStore', () => {
   it('publishes agent.paused event', async () => {
     const { events, control } = setup();
     await control.pause('slow down', 'admin', 'agent_1');
-    const { events: evts } = await events.getEvents(undefined, 'honeybee.agent.paused');
+    const { events: evts } = await events.getEvents(undefined, 'agent.paused');
     expect(evts.length).toBe(1);
     expect(evts[0].data).toEqual({ agent: 'agent_1', reason: 'slow down', paused_by: 'admin' });
   });
@@ -198,7 +198,7 @@ describe('ControlStore', () => {
     const { events, control } = setup();
     await control.pause('wait', 'admin', 'agent_1');
     await control.resume('admin', 'go', 'agent_1');
-    const { events: evts } = await events.getEvents(undefined, 'honeybee.agent.resumed');
+    const { events: evts } = await events.getEvents(undefined, 'agent.resumed');
     expect(evts.length).toBe(1);
     expect(evts[0].data).toEqual({ agent: 'agent_1', reason: 'go', resumed_by: 'admin' });
   });

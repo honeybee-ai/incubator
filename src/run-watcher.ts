@@ -42,7 +42,7 @@ export class RunWatcher {
       }
     }
 
-    if (event.type === 'honeybee.agent.complete') {
+    if (event.type === 'agent.complete') {
       const agentId = data.agent as string;
       if (!agentId) return;
 

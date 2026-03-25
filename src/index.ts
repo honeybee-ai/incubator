@@ -529,7 +529,7 @@ OPTIONS:
         (broodTriggerSchedule as Record<string, unknown>)['_tick'] = {
           every: scheduleRaw.every,
           action: 'publish',
-          config: { type: 'honeybee.schedule.tick' },
+          config: { type: 'schedule.tick' },
         };
         console.error(`[incubator] Schedule: tick every ${scheduleRaw.every} (via TriggerEngine)`);
       }
@@ -674,7 +674,7 @@ OPTIONS:
           }
         }
         // Agents completed — allow restart via trigger or manual start
-        if (event.type === 'honeybee.agents.complete' && gameRunning) {
+        if (event.type === 'agents.complete' && gameRunning) {
           gameRunning = false;
           spawnedOrchestrators.length = 0;
           sessionStore.clear();

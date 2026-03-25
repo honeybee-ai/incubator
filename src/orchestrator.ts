@@ -604,7 +604,7 @@ export class BroodOrchestrator {
     const ns = this.config.namespace ?? 'default';
 
     if (this.stores && this.bus) {
-      this.stores.events.publish('honeybee.agents.complete', {
+      this.stores.events.publish('agents.complete', {
         total: this.totalSpawned,
         exited: this.totalExited,
       }, 'system:orchestrator').then(event => {

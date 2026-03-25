@@ -16,7 +16,7 @@ hive:
               args: { key: "ping", value: "pong" }
     events:
       on:
-        honeybee.agents.complete: spawn
+        agents.complete: spawn
       schedule:
         every: 2s
         action: spawn

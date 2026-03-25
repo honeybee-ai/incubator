@@ -82,7 +82,7 @@ describe('HeartbeatMonitor', () => {
     vi.advanceTimersByTime(110);
     await monitor.check();
 
-    const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.died');
+    const { events } = await stores.events.getEvents(undefined, 'agent.died');
     expect(events).toHaveLength(1);
     const data = events[0].data as { agent: string; released_claims: string[] };
     expect(data.agent).toBe('agent_1');
@@ -100,7 +100,7 @@ describe('HeartbeatMonitor', () => {
     vi.advanceTimersByTime(60); // past stale, before dead
     await monitor.check();
 
-    const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.stale');
+    const { events } = await stores.events.getEvents(undefined, 'agent.stale');
     expect(events).toHaveLength(1);
     const data = events[0].data as { agent: string; role: string };
     expect(data.agent).toBe('agent_1');
@@ -125,7 +125,7 @@ describe('HeartbeatMonitor', () => {
     vi.advanceTimersByTime(60);
     await monitor.check();
 
-    const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.stale');
+    const { events } = await stores.events.getEvents(undefined, 'agent.stale');
     expect(events).toHaveLength(2); // emitted twice since touch cleared the notification
   });
 
@@ -165,7 +165,7 @@ describe('HeartbeatMonitor', () => {
     await monitor.check();
     await monitor.check(); // second check at same time
 
-    const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.stale');
+    const { events } = await stores.events.getEvents(undefined, 'agent.stale');
     expect(events).toHaveLength(1); // only one stale event
   });
 
@@ -180,7 +180,7 @@ describe('HeartbeatMonitor', () => {
     // Agent is removed from lastActivity by handleDeath, so second check is a no-op
     await monitor.check();
 
-    const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.died');
+    const { events } = await stores.events.getEvents(undefined, 'agent.died');
     expect(events).toHaveLength(1);
   });
 
@@ -230,7 +230,7 @@ describe('HeartbeatMonitor', () => {
     await monitor.check();
 
     // agent.died event should have empty released_claims
-    const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.died');
+    const { events } = await stores.events.getEvents(undefined, 'agent.died');
     expect(events).toHaveLength(1);
     const data = events[0].data as { released_claims: string[] };
     expect(data.released_claims).toHaveLength(0);

@@ -145,7 +145,7 @@ describe('REST Control Endpoints', () => {
       });
 
       const stores = registry.get('default');
-      const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.halted');
+      const { events } = await stores.events.getEvents(undefined, 'agent.halted');
       expect(events).toHaveLength(1);
       const eventData = events[0].data as Record<string, unknown>;
       expect(eventData.agent).toBe('agent_2');
@@ -231,7 +231,7 @@ describe('REST Control Endpoints', () => {
       });
 
       const stores = registry.get('default');
-      const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.paused');
+      const { events } = await stores.events.getEvents(undefined, 'agent.paused');
       expect(events).toHaveLength(1);
       const eventData = events[0].data as Record<string, unknown>;
       expect(eventData.agent).toBe('agent_1');
@@ -323,7 +323,7 @@ describe('REST Control Endpoints', () => {
       });
 
       const stores = registry.get('default');
-      const { events } = await stores.events.getEvents(undefined, 'honeybee.agent.resumed');
+      const { events } = await stores.events.getEvents(undefined, 'agent.resumed');
       expect(events).toHaveLength(1);
       const eventData = events[0].data as Record<string, unknown>;
       expect(eventData.agent).toBe('agent_1');
