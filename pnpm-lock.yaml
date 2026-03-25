@@ -13,11 +13,11 @@ importers:
   .:
     dependencies:
       '@agentcoordinationprotocol/sdk':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: link:../acp/packages/sdk
+        version: link:../acp/packages/sdk
       '@agentcoordinationprotocol/spec':
-        specifier: ^0.2.2
-        version: 0.2.2
+        specifier: link:../acp/packages/spec
+        version: link:../acp/packages/spec
       '@anthropic-ai/sdk':
         specifier: ^0.74.0
         version: 0.74.0(zod@3.25.76)
@@ -25,11 +25,11 @@ importers:
         specifier: ^1.64.1
         version: 1.64.1
       '@honeybee-ai/carapace':
-        specifier: ^1.0.1
-        version: 1.0.2
+        specifier: link:../carapace
+        version: link:../carapace
       '@honeybee-ai/hivemind-sdk':
-        specifier: ^0.2.13
-        version: 0.2.13
+        specifier: ^0.3.0
+        version: 0.3.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.26.0(zod@3.25.76)
@@ -82,13 +82,6 @@ importers:
         version: 8.19.0
 
 packages:
-
-  '@agentcoordinationprotocol/sdk@0.1.0':
-    resolution: {integrity: sha512-NzBEee/St0NdorieiwSTJu64dlR3XS+b5Ng/fGtS3Jo1Y6HOHDUB8ej5ZqC8YmW4uPXPlOYLt6hvS9BvhHm3rA==}
-    engines: {node: '>=20'}
-
-  '@agentcoordinationprotocol/spec@0.2.2':
-    resolution: {integrity: sha512-TgIP6SH22UgOXR5hisawDA1UyXqHF6EDORWLzG24qgnxtTxxmloZ+CweJuNxKgQrix5NTSGqLf361espfNtUiQ==}
 
   '@anthropic-ai/claude-agent-sdk@0.2.39':
     resolution: {integrity: sha512-wR1TBH62X6E1YwRnWa+A2Eau7AfpTWtfpnwQXO3yRY31FtmzOjPkQb93hbF3AkT0WL7YF9mxBBwJKUa3ZEc5+A==}
@@ -268,13 +261,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@honeybee-ai/carapace@1.0.2':
-    resolution: {integrity: sha512-M6XpvuoUUHjjTRqFl5rMb+06QwEwQAloOd1ft27xmYP6rVHseI5gMbVPes4EVjoTLkcCYEbxuPo4XlOkrO30XA==}
-    engines: {node: '>=16'}
-    hasBin: true
-
-  '@honeybee-ai/hivemind-sdk@0.2.13':
-    resolution: {integrity: sha512-HWkMVGA4zCCfb79S0eMWUIQrQh7SmjrAiWlxkFz5OMPmWmxfhyqD3tSqwsDE/lim0ola5/1ABOEBNI9xEfcmnQ==}
+  '@honeybee-ai/hivemind-sdk@0.3.0':
+    resolution: {integrity: sha512-Fv3VphlrW68RwteMF8TLbZwrC2eSEsNDTlKzdty5r8C9hDNPSPW39oSPACHGvPOmVhhEC9NPn97yZO8jYYZfxg==}
     engines: {node: '>=20'}
 
   '@hono/node-server@1.19.9':
@@ -1401,12 +1389,6 @@ packages:
 
 snapshots:
 
-  '@agentcoordinationprotocol/sdk@0.1.0': {}
-
-  '@agentcoordinationprotocol/spec@0.2.2':
-    optionalDependencies:
-      js-yaml: 4.1.1
-
   '@anthropic-ai/claude-agent-sdk@0.2.39(zod@3.25.76)':
     dependencies:
       zod: 3.25.76
@@ -1519,9 +1501,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@honeybee-ai/carapace@1.0.2': {}
-
-  '@honeybee-ai/hivemind-sdk@0.2.13':
+  '@honeybee-ai/hivemind-sdk@0.3.0':
     dependencies:
       zod: 3.25.76
 
