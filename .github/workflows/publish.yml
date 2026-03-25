@@ -43,9 +43,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm install -g npm@latest
       - run: pnpm install
       - run: pnpm run build
       - run: npm publish --access restricted
