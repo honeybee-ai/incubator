@@ -102,7 +102,7 @@
     "@anthropic-ai/sdk": "^0.74.0",
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
     "@honeybee-ai/carapace": "*",
-    "@honeybee-ai/hivemind-sdk": "*",
+    "@honeybee-ai/hivemind-sdk": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "groq-sdk": "^0.37.0",
     "js-yaml": "^4.1.1",
