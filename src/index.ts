@@ -720,7 +720,6 @@ OPTIONS:
     // Build integration config for plugins
     const intConfig = loadIntegrations ? loadIntegrationsConfig() : {};
     await pluginManager.init({
-      autoDiscover: true,
       broodPlugins,
       integrations: loadIntegrations ? intConfig : undefined,
       cliIntegrations: cliIntegrations.length > 0 ? cliIntegrations : undefined,

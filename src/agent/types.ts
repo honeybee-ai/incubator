@@ -1,3 +1,17 @@
+// ─── Shared types (from SDK) ────────────────────────────────────────
+export type {
+  ProviderConfig,
+  ChatMessage,
+  ToolCall,
+  ToolDef,
+  TokenUsage,
+  CompletionResult,
+} from '@honeybee-ai/hivemind-sdk/providers';
+
+export type { CompletionOptions } from '@honeybee-ai/hivemind-sdk/providers';
+
+// ─── Incubator-specific types ───────────────────────────────────────
+
 export interface StartOnCondition {
   event: string;
   count: number;
@@ -17,21 +31,12 @@ export interface WakeOnConfig {
   maxWakes?: number;
 }
 
-export interface ProviderConfig {
-  type: 'ollama' | 'openai' | 'anthropic';
-  baseUrl: string;
-  apiKey?: string;
-  model: string;
-  /** Provider name from catalog (e.g. 'cerebras', 'groq'). Used for SDK dispatch. */
-  providerName?: string;
-}
-
 export type AgentMode = 'worker' | 'drone';
 
 export interface AgentConfig {
   agentId: string;
   role: string;
-  provider: ProviderConfig;
+  provider: import('@honeybee-ai/hivemind-sdk/providers').ProviderConfig;
   serverUrl: string;
   namespace: string;
   protocolPath?: string;
@@ -73,46 +78,6 @@ export interface AgentConfig {
 /** Backwards-compatible alias */
 export type DroneConfig = AgentConfig;
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
-}
-
-export interface ToolCall {
-  id?: string;
-  type?: 'function';
-  function: {
-    name: string;
-    arguments: string | Record<string, unknown>;
-  };
-}
-
-export interface ToolDef {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: {
-      type: 'object';
-      properties: Record<string, { type: string; description: string; enum?: string[] }>;
-      required: string[];
-    };
-  };
-}
-
-export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-}
-
-export interface CompletionResult {
-  message: ChatMessage;
-  usage: TokenUsage;
-}
-
 export type AgentStatus = 'idle' | 'running' | 'completed' | 'error';
 
 export interface AgentResult {
@@ -121,7 +86,7 @@ export interface AgentResult {
   status: AgentStatus;
   iterations: number;
   error?: string;
-  usage?: TokenUsage;
+  usage?: import('@honeybee-ai/hivemind-sdk/providers').TokenUsage;
   /** Per-iteration token counts for detailed analysis */
-  iterationUsage?: TokenUsage[];
+  iterationUsage?: import('@honeybee-ai/hivemind-sdk/providers').TokenUsage[];
 }

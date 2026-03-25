@@ -67,6 +67,7 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "node --experimental-vm-modules node_modules/.bin/vitest",
+    "postinstall": "node .dev-link.mjs 2>/dev/null || true",
     "prepublishOnly": "pnpm run build && pnpm test"
   },
   "keywords": [
@@ -96,12 +97,12 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@agentcoordinationprotocol/sdk": "^0.1.0",
-    "@agentcoordinationprotocol/spec": "^0.2.2",
+    "@agentcoordinationprotocol/sdk": "*",
+    "@agentcoordinationprotocol/spec": "*",
     "@anthropic-ai/sdk": "^0.74.0",
     "@cerebras/cerebras_cloud_sdk": "^1.64.1",
-    "@honeybee-ai/carapace": "^1.0.1",
-    "@honeybee-ai/hivemind-sdk": "^0.2.13",
+    "@honeybee-ai/carapace": "*",
+    "@honeybee-ai/hivemind-sdk": "*",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "groq-sdk": "^0.37.0",
     "js-yaml": "^4.1.1",

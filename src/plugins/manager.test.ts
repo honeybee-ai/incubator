@@ -145,35 +145,17 @@ describe('PluginManager', () => {
     expect(pm.getHandlerMap().size).toBe(0);
   });
 
-  it('init with autoDiscover=false skips propolis', async () => {
-    const { loadPlugin } = await import('./loader.js');
-    (loadPlugin as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('not found'));
-
+  it('init with no options loads nothing', async () => {
     const pm = new PluginManager();
-    await pm.init({ autoDiscover: false });
-
-    expect(loadPlugin).not.toHaveBeenCalled();
-    expect(pm.getLoadedNames()).toEqual([]);
-  });
-
-  it('init autoDiscover fails gracefully', async () => {
-    const { loadPlugin } = await import('./loader.js');
-    (loadPlugin as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Module not found'));
-
-    const pm = new PluginManager({ verbose: true });
-    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await pm.init({ autoDiscover: true });
+    await pm.init();
 
     expect(pm.getLoadedNames()).toEqual([]);
-    logSpy.mockRestore();
   });
 
   it('init loads brood plugins', async () => {
     const { loadPlugin } = await import('./loader.js');
     const plugin = makePlugin('docker-tools');
-    (loadPlugin as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new Error('no propolis')) // autoDiscover fails
-      .mockResolvedValueOnce(plugin);
+    (loadPlugin as ReturnType<typeof vi.fn>).mockResolvedValueOnce(plugin);
 
     const pm = new PluginManager();
     await pm.init({
@@ -181,21 +163,6 @@ describe('PluginManager', () => {
     });
 
     expect(pm.getLoadedNames()).toEqual(['docker-tools']);
-  });
-
-  it('init skips duplicate propolis from brood if already discovered', async () => {
-    const { loadPlugin } = await import('./loader.js');
-    const propolisPlugin = makePlugin('propolis', [makeTool('read_file')]);
-    (loadPlugin as ReturnType<typeof vi.fn>).mockResolvedValue(propolisPlugin);
-
-    const pm = new PluginManager();
-    await pm.init({
-      broodPlugins: [{ package: '@honeybee-ai/propolis' }],
-    });
-
-    // Should only be loaded once (autoDiscover), not twice
-    expect(pm.getLoadedNames()).toEqual(['propolis']);
-    expect(loadPlugin).toHaveBeenCalledTimes(1);
   });
 
   it('buildToolEntries passes context to plugins', async () => {
@@ -221,9 +188,7 @@ describe('PluginManager', () => {
   it('init loads legacy integrations from config', async () => {
     const { loadPlugin } = await import('./loader.js');
     const plugin = makePlugin('webhook');
-    (loadPlugin as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new Error('no propolis'))
-      .mockResolvedValueOnce(plugin);
+    (loadPlugin as ReturnType<typeof vi.fn>).mockResolvedValueOnce(plugin);
 
     const pm = new PluginManager();
     await pm.init({
@@ -239,9 +204,7 @@ describe('PluginManager', () => {
   it('init loads CLI-specified integrations', async () => {
     const { loadPlugin } = await import('./loader.js');
     const plugin = makePlugin('myint');
-    (loadPlugin as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new Error('no propolis'))
-      .mockResolvedValueOnce(plugin);
+    (loadPlugin as ReturnType<typeof vi.fn>).mockResolvedValueOnce(plugin);
 
     const pm = new PluginManager();
     await pm.init({

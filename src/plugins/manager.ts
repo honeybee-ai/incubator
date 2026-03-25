@@ -25,8 +25,6 @@ export interface BroodPluginEntry {
 }
 
 export interface PluginManagerOptions {
-  /** Try to auto-discover propolis on init(). Default: true. */
-  autoDiscover?: boolean;
   /** Plugin packages passed via --plugin= CLI flags. */
   cliPlugins?: string[];
   /** Plugin entries from brood.yaml. */
@@ -74,18 +72,7 @@ export class PluginManager {
    * Auto-discovers propolis, loads CLI/brood plugins, wraps legacy integrations.
    */
   async init(opts?: PluginManagerOptions): Promise<void> {
-    const autoDiscover = opts?.autoDiscover ?? true;
-
-    // 1. Auto-discover propolis
-    if (autoDiscover) {
-      try {
-        await this.load('propolis', '@honeybee-ai/propolis');
-      } catch {
-        this.log('No plugins auto-discovered');
-      }
-    }
-
-    // 2. CLI plugins (--plugin=)
+    // 1. CLI plugins (--plugin=)
     if (opts?.cliPlugins) {
       for (const pkg of opts.cliPlugins) {
         try {
@@ -96,13 +83,9 @@ export class PluginManager {
       }
     }
 
-    // 3. Brood.yaml plugins
+    // 2. Brood.yaml plugins
     if (opts?.broodPlugins) {
       for (const entry of opts.broodPlugins) {
-        // Skip propolis if already auto-discovered
-        if (entry.package === '@honeybee-ai/propolis' && this.plugins.some(p => p.name === 'propolis')) {
-          continue;
-        }
         try {
           const name = entry.package.replace(/^@[^/]+\//, '');
           await this.load(name, entry.package, entry.config);
@@ -112,7 +95,7 @@ export class PluginManager {
       }
     }
 
-    // 4. Legacy integrations
+    // 3. Legacy integrations
     if (opts?.integrations) {
       const cliIntNames = opts?.cliIntegrations ?? [];
 
