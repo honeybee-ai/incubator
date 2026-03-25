@@ -504,14 +504,14 @@ describe('BroodOrchestrator', () => {
       droneChildren[0].value.emit('exit', 0, null);
       await new Promise(r => setTimeout(r, 50));
       expect(publishSpy).not.toHaveBeenCalledWith(
-        'agents.complete', expect.anything(), expect.anything()
+        'honeybee.agents.complete', expect.anything(), expect.anything()
       );
 
       // Simulate second drone exit — NOW it should fire
       droneChildren[1].value.emit('exit', 0, null);
       await new Promise(r => setTimeout(r, 50));
       expect(publishSpy).toHaveBeenCalledWith(
-        'agents.complete',
+        'honeybee.agents.complete',
         expect.objectContaining({ total: 2, exited: 2 }),
         'system:orchestrator',
       );
@@ -532,7 +532,7 @@ describe('BroodOrchestrator', () => {
 
       await new Promise(r => setTimeout(r, 50));
       expect(publishSpy).not.toHaveBeenCalledWith(
-        'agents.complete', expect.anything(), expect.anything()
+        'honeybee.agents.complete', expect.anything(), expect.anything()
       );
 
       publishSpy.mockRestore();

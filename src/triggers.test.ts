@@ -777,20 +777,20 @@ describe('string action shorthand', () => {
 describe('spawn action', () => {
   it('publishes start event on bus when triggered', async () => {
     const { engine, stores, bus } = createEngine({
-      on: { 'agents.complete': 'spawn' },
+      on: { 'honeybee.agents.complete': 'spawn' },
     });
 
     engine.start();
 
     // Fire the triggering event
-    const event = mockEvent('agents.complete', 'system:orchestrator');
+    const event = mockEvent('honeybee.agents.complete', 'system:orchestrator');
     bus.publish('default', event);
 
     // Wait for async dispatch
     await vi.waitFor(() => {
       expect(stores.events.publish).toHaveBeenCalledWith(
         'start',
-        expect.objectContaining({ source: 'agents.complete', trigger: 'spawn' }),
+        expect.objectContaining({ source: 'honeybee.agents.complete', trigger: 'spawn' }),
         'trigger:spawn',
       );
     });
@@ -803,13 +803,13 @@ describe('spawn action', () => {
 
   it('does not fire on events from triggers (loop prevention)', async () => {
     const { engine, stores, bus } = createEngine({
-      on: { 'agents.complete': 'spawn' },
+      on: { 'honeybee.agents.complete': 'spawn' },
     });
 
     engine.start();
 
     // Event from a trigger source — should be skipped
-    const event = mockEvent('agents.complete', 'trigger:spawn');
+    const event = mockEvent('honeybee.agents.complete', 'trigger:spawn');
     bus.publish('default', event);
 
     // Give time for potential dispatch

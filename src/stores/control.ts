@@ -46,7 +46,7 @@ export class ControlStore {
 
     if (target) {
       this.agentHalts.set(target, info);
-      await this.events.publish('agent.halted', { agent: target, reason, status, halted_by: haltedBy }, haltedBy);
+      await this.events.publish('honeybee.agent.halted', { agent: target, reason, status, halted_by: haltedBy }, haltedBy);
     } else {
       this.protocolHalt = info;
       await this.events.publish('protocol.halt', { reason, status, halted_by: haltedBy }, haltedBy);
@@ -66,7 +66,7 @@ export class ControlStore {
 
     if (target) {
       this.agentPauses.set(target, info);
-      await this.events.publish('agent.paused', { agent: target, reason, paused_by: pausedBy }, pausedBy);
+      await this.events.publish('honeybee.agent.paused', { agent: target, reason, paused_by: pausedBy }, pausedBy);
     } else {
       this.protocolPause = info;
       await this.events.publish('protocol.paused', { reason, paused_by: pausedBy }, pausedBy);
@@ -80,7 +80,7 @@ export class ControlStore {
     if (target) {
       if (!this.agentPauses.has(target)) return false;
       this.agentPauses.delete(target);
-      await this.events.publish('agent.resumed', { agent: target, reason, resumed_by: resumedBy }, resumedBy);
+      await this.events.publish('honeybee.agent.resumed', { agent: target, reason, resumed_by: resumedBy }, resumedBy);
       return true;
     } else {
       if (!this.protocolPause) return false;

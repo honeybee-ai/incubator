@@ -47,7 +47,7 @@ describe('RunWatcher', () => {
 
     // Then complete it
     bus.publish('default', {
-      id: 2, type: 'agent.complete',
+      id: 2, type: 'honeybee.agent.complete',
       data: {
         agent: 'agent_xyz',
         summary: 'Agent agent_xyz completed after 5 iterations',
@@ -81,7 +81,7 @@ describe('RunWatcher', () => {
     await tick();
 
     bus.publish('default', {
-      id: 2, type: 'agent.complete',
+      id: 2, type: 'honeybee.agent.complete',
       data: {
         agent: 'agent_err',
         summary: 'Error: connection refused',
@@ -110,7 +110,7 @@ describe('RunWatcher', () => {
     await tick();
 
     bus.publish('default', {
-      id: 2, type: 'agent.complete',
+      id: 2, type: 'honeybee.agent.complete',
       data: { agent: 'agent_halt', summary: 'Agent halted', iterations: 3, elapsed: 2000 },
       publishedBy: 'agent_halt', timestamp: new Date().toISOString(),
     });
@@ -126,7 +126,7 @@ describe('RunWatcher', () => {
     const { bus, runs, watcher } = setup();
 
     bus.publish('default', {
-      id: 1, type: 'agent.complete',
+      id: 1, type: 'honeybee.agent.complete',
       data: { summary: 'no agent field' },
       publishedBy: 'system', timestamp: new Date().toISOString(),
     });

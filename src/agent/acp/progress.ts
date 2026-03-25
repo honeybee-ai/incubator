@@ -26,7 +26,7 @@ export class ProgressReporter {
     if (iteration % 5 !== 0 && iteration !== 1) return;
 
     try {
-      await this.client.publishEvent('agent.progress', {
+      await this.client.publishEvent('honeybee.agent.progress', {
         agent: this.agentId,
         iteration,
         maxIterations,
@@ -43,7 +43,7 @@ export class ProgressReporter {
    */
   async reportComplete(summary: string, usage?: { promptTokens: number; completionTokens: number; totalTokens: number }): Promise<void> {
     try {
-      await this.client.publishEvent('agent.complete', {
+      await this.client.publishEvent('honeybee.agent.complete', {
         agent: this.agentId,
         summary,
         iterations: this.iterationCount,

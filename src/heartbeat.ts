@@ -82,7 +82,7 @@ export class HeartbeatMonitor {
 
   private async handleStale(agentId: string): Promise<void> {
     const assignment = await this.stores.roles.getByAgent(agentId);
-    await this.stores.events.publish('agent.stale', {
+    await this.stores.events.publish('honeybee.agent.stale', {
       agent: agentId,
       role: assignment?.role,
       last_activity: new Date(this.lastActivity.get(agentId)!).toISOString(),
@@ -106,7 +106,7 @@ export class HeartbeatMonitor {
     // Remove role assignment
     await this.stores.roles.remove(agentId);
 
-    await this.stores.events.publish('agent.died', {
+    await this.stores.events.publish('honeybee.agent.died', {
       agent: agentId,
       role: assignment?.role,
       released_claims: releasedClaims,

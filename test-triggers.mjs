@@ -163,7 +163,7 @@ async function phase1() {
   console.log('\n\u2550\u2550 Level 1: TriggerEngine wiring (env vars, no brood) \u2550\u2550\n');
 
   const SCHEDULE = JSON.stringify({
-    _tick: { every: '2s', action: 'publish', config: { type: 'schedule.tick' } },
+    _tick: { every: '2s', action: 'publish', config: { type: 'honeybee.schedule.tick' } },
   });
   const TRIGGERS = JSON.stringify({
     'test.input': { action: 'publish', config: { type: 'test.output' } },
@@ -181,7 +181,7 @@ async function phase1() {
     await c.replay;
 
     // Register schedule waiter early (fires at t~2s)
-    const tickPromise = c.wait('schedule.tick', 6000);
+    const tickPromise = c.wait('honeybee.schedule.tick', 6000);
 
     // Test 2: Publish trigger fires
     console.log('\u2500 Test 2: Publish trigger (test.input \u2192 test.output)');
@@ -206,7 +206,7 @@ async function phase1() {
     // Test 1: Schedule fires (waited in parallel with tests 2-4)
     console.log('\u2500 Test 1: Schedule fires');
     const tick = await tickPromise;
-    ok(tick.type === 'schedule.tick', 'schedule.tick event received');
+    ok(tick.type === 'honeybee.schedule.tick', 'schedule.tick event received');
 
     c.close();
   } finally {
@@ -220,7 +220,7 @@ async function phase2() {
   console.log('\n\u2550\u2550 Level 2: Full restart loop (brood + mock agents) \u2550\u2550\n');
 
   const TRIGGERS = JSON.stringify({
-    'agents.complete': 'spawn',
+    'honeybee.agents.complete': 'spawn',
   });
 
   const server = await startServer(
@@ -234,11 +234,11 @@ async function phase2() {
 
     // Test 5: Publish start -> agents.complete
     console.log('\u2500 Test 5: start \u2192 agents run \u2192 agents.complete');
-    const completePromise = c.wait('agents.complete', 10_000);
+    const completePromise = c.wait('honeybee.agents.complete', 10_000);
     c.publish('start', {});
     await c.wait('start', 5000); // consume the reflected start event
     const complete1 = await completePromise;
-    ok(complete1.type === 'agents.complete', 'agents.complete received');
+    ok(complete1.type === 'honeybee.agents.complete', 'agents.complete received');
 
     // Test 6: Verify agent counts
     console.log('\u2500 Test 6: agents.complete has correct counts');
@@ -252,8 +252,8 @@ async function phase2() {
 
     // Test 8: Second agents.complete
     console.log('\u2500 Test 8: Second agents.complete (restart loop confirmed)');
-    const complete2 = await c.wait('agents.complete', 10_000);
-    ok(complete2.type === 'agents.complete', 'second agents.complete received');
+    const complete2 = await c.wait('honeybee.agents.complete', 10_000);
+    ok(complete2.type === 'honeybee.agents.complete', 'second agents.complete received');
     ok(complete2.data?.total === 2, `total = ${complete2.data?.total} (expected 2)`);
 
     c.close();
@@ -282,8 +282,8 @@ async function phase3() {
 
     // Test 9: Schedule fires spawn -> agents spawn -> agents.complete
     console.log('\u2500 Test 9: Schedule \u2192 spawn \u2192 agents.complete');
-    const complete = await c.wait('agents.complete', 10_000);
-    ok(complete.type === 'agents.complete', 'agents.complete from schedule-triggered spawn');
+    const complete = await c.wait('honeybee.agents.complete', 10_000);
+    ok(complete.type === 'honeybee.agents.complete', 'agents.complete from schedule-triggered spawn');
     ok(complete.data?.total === 2, `total = ${complete.data?.total} (expected 2)`);
 
     c.close();
@@ -306,13 +306,13 @@ async function phase4() {
 
     // Test 10: Top-level schedule fires schedule.tick
     console.log('\u2500 Test 10: brood.yaml top-level schedule \u2192 schedule.tick');
-    const tick = await c.wait('schedule.tick', 6000);
-    ok(tick.type === 'schedule.tick', 'schedule.tick from brood schedule');
+    const tick = await c.wait('honeybee.schedule.tick', 6000);
+    ok(tick.type === 'honeybee.schedule.tick', 'schedule.tick from brood schedule');
 
     // Test 11: Per-namespace schedule fires spawn -> start -> agents.complete
     console.log('\u2500 Test 11: brood.yaml per-namespace schedule \u2192 spawn \u2192 agents.complete');
-    const complete1 = await c.wait('agents.complete', 10_000);
-    ok(complete1.type === 'agents.complete', 'agents.complete from brood schedule spawn');
+    const complete1 = await c.wait('honeybee.agents.complete', 10_000);
+    ok(complete1.type === 'honeybee.agents.complete', 'agents.complete from brood schedule spawn');
     ok(complete1.data?.total === 2, `total = ${complete1.data?.total} (expected 2)`);
 
     // Test 12: brood.yaml events.on trigger fires restart loop
@@ -322,8 +322,8 @@ async function phase4() {
     ok(start2.publishedBy === 'trigger:spawn', `restart from brood on: trigger (publishedBy="${start2.publishedBy}")`);
 
     // Confirm second round completes
-    const complete2 = await c.wait('agents.complete', 10_000);
-    ok(complete2.type === 'agents.complete', 'second agents.complete (restart loop via brood config)');
+    const complete2 = await c.wait('honeybee.agents.complete', 10_000);
+    ok(complete2.type === 'honeybee.agents.complete', 'second agents.complete (restart loop via brood config)');
 
     c.close();
   } finally {
