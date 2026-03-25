@@ -285,7 +285,7 @@ export async function runEval(task: EvalTask, opts: EvalRunOptions = {}): Promis
       bus,
       eventStore: stores.events,
     });
-    await pluginManager.init({ autoDiscover: true });
+    await pluginManager.init();
     pluginManager.buildToolEntries(workDir, null, verbose);
 
     if (!pluginManager.hasToolEntries()) {
