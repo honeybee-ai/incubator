@@ -84,6 +84,7 @@ OPTIONS:
   --verbose          Enable debug logging
   --log-format=FMT   'text' (default) or 'json'
   --no-guard         Disable Carapace scanning
+  --plugin=PKG       Load a plugin (npm package or path, repeatable)
   --version, -v      Show version
   --help, -h         Show this help`);
     process.exit(0);
@@ -176,6 +177,14 @@ OPTIONS:
     }
   }
   const loadIntegrations = cliIntegrations.length > 0 || args['integrations'] === true;
+
+  // Plugin loading (--plugin=<pkg-or-path>, repeatable)
+  const cliPlugins: string[] = [];
+  for (const arg of process.argv.slice(2)) {
+    if (arg.startsWith('--plugin=')) {
+      cliPlugins.push(arg.slice('--plugin='.length));
+    }
+  }
 
   const registry = new NamespaceRegistry(backendConfig);
   let sanitizeSnapshotFn: undefined | ((snapshot: import('./types.js').Snapshot) => void);
@@ -720,6 +729,7 @@ OPTIONS:
     // Build integration config for plugins
     const intConfig = loadIntegrations ? loadIntegrationsConfig() : {};
     await pluginManager.init({
+      cliPlugins: cliPlugins.length > 0 ? cliPlugins : undefined,
       broodPlugins,
       integrations: loadIntegrations ? intConfig : undefined,
       cliIntegrations: cliIntegrations.length > 0 ? cliIntegrations : undefined,
