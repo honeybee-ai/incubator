@@ -17,6 +17,9 @@ import type {
   ToolDefinition,
 } from '@honeybee-ai/hivemind-sdk/integrations';
 
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 /**
  * Load a package and return an IncubatorPlugin.
  * If the package exports a legacy IntegrationModule, wraps it automatically.
@@ -25,7 +28,11 @@ export async function loadPlugin(
   packageName: string,
   config?: Record<string, string>,
 ): Promise<IncubatorPlugin> {
-  const mod = await import(packageName);
+  // Resolve file paths to file:// URLs (ESM import() resolves relative to calling module, not CWD)
+  const importPath = packageName.startsWith('.') || packageName.startsWith('/')
+    ? pathToFileURL(resolve(packageName)).href
+    : packageName;
+  const mod = await import(importPath);
 
   // 1. New plugin factory: named export createPlugin(config?)
   const pluginFactory: PluginFactory | undefined =
