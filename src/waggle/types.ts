@@ -59,4 +59,12 @@ export interface AcpBackend {
   waitForWake(condition: { types?: string[] | null; timeout?: number }): Promise<string[]>;
   /** Load an ACP protocol spec at runtime. spec is YAML or JSON string. */
   loadProtocol?(spec: string): Promise<string>;
+
+  // Queen tools — optional, only implemented when queen context is available
+  spawnAgent?(role: string, config?: Record<string, unknown>): Promise<string>;
+  killAgent?(agentId: string): Promise<string>;
+  getStatus?(): Promise<string>;
+  getBudget?(): Promise<string>;
+  approveRequest?(requestId: string, decision: string): Promise<string>;
+  escalate?(message: string, severity?: string): Promise<string>;
 }

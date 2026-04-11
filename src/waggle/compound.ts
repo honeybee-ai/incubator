@@ -29,6 +29,8 @@ export interface CompoundContext {
   telemetry?: TelemetryReporter;
   /** Dynamic env action names (from PluginManager). Falls back to DEFAULT_ENV_ACTIONS. */
   envActions?: Set<string>;
+  /** Whether this agent is a queen — enables queen-specific tools. */
+  isQueen?: boolean;
 }
 
 // ─── Action name mapping ────────────────────────────────────────────
@@ -41,6 +43,9 @@ const ENV_ACTION_MAP: Record<string, string> = {
 
 /** ACP coordination primitives. */
 const ACP_ACTIONS = new Set(['publish', 'claim', 'release', 'get_state', 'set_state', 'load_protocol']);
+
+/** Queen-only actions — gated on ctx.isQueen. */
+const QUEEN_ACTIONS = new Set(['spawn_agent', 'kill_agent', 'get_status', 'get_budget', 'approve_request', 'escalate']);
 
 /**
  * All known env action names.
@@ -93,7 +98,16 @@ export async function compoundHandler(
     const resolved = resolveTemplates(opArgs, lastResult);
     const op: Operation = { do: action, ...resolved };
 
-    if (ACP_ACTIONS.has(action)) {
+    if (QUEEN_ACTIONS.has(action)) {
+      if (!ctx.isQueen) {
+        results.push({ op: action, ok: false, error: `queen action '${action}' not permitted — agent is not a queen` });
+        continue;
+      }
+      const result = await executeQueenOp(op, ctx.acp);
+      if (result.ok) lastResult = result.data;
+      ctx.telemetry?.record('tool_call', { action, success: result.ok, latency_ms: Date.now() - opStart });
+      results.push(result);
+    } else if (ACP_ACTIONS.has(action)) {
       // Check ACP primitive filtering
       if (ctx.primitives?.acp && !ctx.primitives.acp.includes(action)) {
         results.push({ op: action, ok: false, error: `action '${action}' not permitted for this role` });
@@ -233,6 +247,54 @@ async function executeAcpOp(
         break;
       default:
         return { op: op.do, ok: false, error: `unknown ACP action: '${op.do}'` };
+    }
+
+    return unwrapJsonResult(op.do, resultStr);
+  } catch (err) {
+    return { op: op.do, ok: false, error: (err as Error).message };
+  }
+}
+
+// ─── Queen op execution ────────────────────────────────────────────
+
+async function executeQueenOp(
+  op: Operation,
+  acp?: AcpBackend | null,
+): Promise<OpResult> {
+  if (!acp) {
+    return { op: op.do, ok: false, error: 'no ACP backend available for queen ops' };
+  }
+
+  try {
+    let resultStr: string;
+
+    switch (op.do) {
+      case 'spawn_agent':
+        if (!acp.spawnAgent) return { op: op.do, ok: false, error: 'spawn_agent not supported by this backend' };
+        resultStr = await acp.spawnAgent(op.role as string, op.config as Record<string, unknown> | undefined);
+        break;
+      case 'kill_agent':
+        if (!acp.killAgent) return { op: op.do, ok: false, error: 'kill_agent not supported by this backend' };
+        resultStr = await acp.killAgent(op.agent_id as string);
+        break;
+      case 'get_status':
+        if (!acp.getStatus) return { op: op.do, ok: false, error: 'get_status not supported by this backend' };
+        resultStr = await acp.getStatus();
+        break;
+      case 'get_budget':
+        if (!acp.getBudget) return { op: op.do, ok: false, error: 'get_budget not supported by this backend' };
+        resultStr = await acp.getBudget();
+        break;
+      case 'approve_request':
+        if (!acp.approveRequest) return { op: op.do, ok: false, error: 'approve_request not supported by this backend' };
+        resultStr = await acp.approveRequest(op.request_id as string, op.decision as string);
+        break;
+      case 'escalate':
+        if (!acp.escalate) return { op: op.do, ok: false, error: 'escalate not supported by this backend' };
+        resultStr = await acp.escalate(op.message as string, op.severity as string | undefined);
+        break;
+      default:
+        return { op: op.do, ok: false, error: `unknown queen action: '${op.do}'` };
     }
 
     return unwrapJsonResult(op.do, resultStr);
