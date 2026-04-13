@@ -5,6 +5,7 @@ import type { NamespaceRegistry } from './namespaces.js';
 import type { IncubatorEvent } from './types.js';
 import type { DanceModule, DanceAcpHelper } from './dances.js';
 import type { TelemetryReporter } from '@honeybee-ai/hivemind-sdk/telemetry';
+import type { BridgeRegistry } from './bridge.js';
 
 export interface DanceSupport {
   module: DanceModule;
@@ -51,12 +52,23 @@ export async function setupWebSocket(
   /** @internal for testing — inject WebSocketServer to avoid createRequire issues in vitest */
   WebSocketServerOverride?: new (opts: { noServer: true }) => WebSocketServerLike,
   danceSupport?: DanceSupport,
+  bridgeRegistry?: BridgeRegistry,
 ): Promise<WsManager> {
   const WebSocketServer = WebSocketServerOverride ?? await loadWebSocketServer();
   const wss = new WebSocketServer({ noServer: true });
+  const bridgeWss = bridgeRegistry ? new WebSocketServer({ noServer: true }) : null;
 
   httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', `http://localhost`);
+
+    // Bridge WebSocket — Chrome extension and other bridge clients
+    if (url.pathname === '/bridge/ws' && bridgeWss && bridgeRegistry) {
+      bridgeWss.handleUpgrade(req, socket, head, (ws) => {
+        bridgeRegistry.handleConnection(ws);
+      });
+      return;
+    }
+
     if (url.pathname !== '/ws') {
       socket.destroy();
       return;
@@ -67,9 +79,13 @@ export async function setupWebSocket(
     });
   });
 
+  if (bridgeRegistry) bridgeRegistry.startPing();
+
   return {
     close() {
       wss.close();
+      bridgeWss?.close();
+      bridgeRegistry?.stop();
     },
   };
 }

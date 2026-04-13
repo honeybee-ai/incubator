@@ -480,9 +480,12 @@ OPTIONS:
     }
 
     let wsManager: WsManager | undefined;
+    let bridgeRegistry: import('./bridge.js').BridgeRegistry | undefined;
     try {
       const { setupWebSocket } = await import('./ws.js');
-      wsManager = await setupWebSocket(httpServer, registry, bus, verbose, undefined, danceSupport);
+      const { BridgeRegistry } = await import('./bridge.js');
+      bridgeRegistry = new BridgeRegistry(verbose);
+      wsManager = await setupWebSocket(httpServer, registry, bus, verbose, undefined, danceSupport, bridgeRegistry);
     } catch {
       // ws not installed or failed to load — WebSocket disabled
     }
@@ -737,6 +740,19 @@ OPTIONS:
 
     // Build tool entries for the working directory
     pluginManager.buildToolEntries(process.cwd(), carapaceGuard ?? null, verbose);
+
+    // Register bridge browser tools if BridgeRegistry is available
+    if (bridgeRegistry) {
+      const handlers = pluginManager.getHandlerMap();
+      const bridgeToolNames = ['browser_navigate', 'browser_click', 'browser_type', 'browser_read_page', 'browser_screenshot', 'browser_tabs'];
+      for (const toolName of bridgeToolNames) {
+        handlers.set(toolName, async (args: Record<string, unknown>) => {
+          const result = await bridgeRegistry!.callTool(toolName, args);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+        });
+      }
+      console.error(`[incubator] Bridge:       ${bridgeToolNames.length} browser tools registered (waiting for extension)`);
+    }
 
     const loadedPlugins = pluginManager.getLoadedNames();
     if (loadedPlugins.length > 0) {
